@@ -174,7 +174,7 @@ class DatabaseManager {
     }
     
     /// 搜索文件（使用解析后的查询）
-    func searchFiles(parsedQuery: SearchQueryParser.ParsedQuery, filter: SearchFilter?) -> [FileItem] {
+    func searchFiles(parsedQuery: SearchQueryParser.ParsedQuery, filter: SearchFilter?, whitelist: PathKeywordList? = nil, blacklist: PathKeywordList? = nil) -> [FileItem] {
         var results: [FileItem] = []
         var searchSQL = "SELECT path, name, size, is_directory, created_date, modified_date, accessed_date, file_extension FROM file_index WHERE 1=1"
         var conditions: [String] = []
@@ -373,6 +373,19 @@ class DatabaseManager {
                     }
                     return true
                 }
+            }
+        }
+        
+        // 应用路径关键词筛选（白名单和黑名单）
+        if let whitelist = whitelist, !whitelist.keywords.isEmpty {
+            results = results.filter { item in
+                whitelist.matchesWhitelist(item.path)
+            }
+        }
+        
+        if let blacklist = blacklist, !blacklist.keywords.isEmpty {
+            results = results.filter { item in
+                blacklist.matchesBlacklist(item.path)
             }
         }
         

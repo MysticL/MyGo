@@ -24,7 +24,18 @@ struct FileListView: View {
         KeyPathComparator(\FileItem.sortableModifiedDate)
     ]
     @State private var selectedFileID: UUID?
-    @State private var columnWidths: [String: CGFloat] = [:]
+    
+    // 统一的默认列宽定义
+    private static let defaultColumnWidths: [String: CGFloat] = [
+        "名称": 400,
+        "路径": 600,
+        "文件格式": 50,
+        "大小": 50,
+        "修改日期": 150
+    ]
+    
+    @State private var columnWidths: [String: CGFloat] = Self.defaultColumnWidths
+    @State private var columnWidthsApplied = false
     var onFileAction: (FileItem, FileAction) -> Void
     
     enum FileAction {
@@ -75,11 +86,11 @@ struct FileListView: View {
                         }
                     }
                 }
-                .width(min: 200, ideal: getColumnWidth("名称", defaultWidth: 300))
+                .width(min: 200, ideal: getColumnWidth("名称", defaultWidth: Self.defaultColumnWidths["名称"] ?? 400))
                 
-                // 路径列 - 可排序（只显示目录路径）
+                // 路径列 - 可排序（只显示目录路径，默认去掉前两级）
                 TableColumn("路径", value: \.directoryPath) { file in
-                    Text(file.directoryPath)
+                    Text(file.shortenedDirectoryPath)
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -88,10 +99,10 @@ struct FileListView: View {
                             onFileAction(file, .open)
                         }
                 }
-                .width(min: 200, ideal: getColumnWidth("路径", defaultWidth: 400))
+                .width(min: 200, ideal: getColumnWidth("路径", defaultWidth: Self.defaultColumnWidths["路径"] ?? 600))
                 
-                // 扩展名列 - 可排序，右对齐
-                TableColumn("扩展名", value: \.sortableExtension) { file in
+                // 文件格式列 - 可排序，右对齐
+                TableColumn("文件格式", value: \.sortableExtension) { file in
                     Text(file.fileExtension?.uppercased() ?? "--")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
@@ -101,7 +112,7 @@ struct FileListView: View {
                             onFileAction(file, .open)
                         }
                 }
-                .width(min: 40, ideal: getColumnWidth("扩展名", defaultWidth: 50))
+                .width(min: 40, ideal: getColumnWidth("文件格式", defaultWidth: Self.defaultColumnWidths["文件格式"] ?? 50))
                 
                 // 大小列 - 可排序
                 TableColumn("大小", value: \.size) { file in
@@ -114,7 +125,7 @@ struct FileListView: View {
                             onFileAction(file, .open)
                         }
                 }
-                .width(min: 40, ideal: getColumnWidth("大小", defaultWidth: 50))
+                .width(min: 40, ideal: getColumnWidth("大小", defaultWidth: Self.defaultColumnWidths["大小"] ?? 50))
                 
                 // 修改日期列 - 可排序
                 TableColumn("修改日期", value: \.sortableModifiedDate) { file in
@@ -126,22 +137,35 @@ struct FileListView: View {
                             onFileAction(file, .open)
                         }
                 }
-                .width(min: 150, ideal: getColumnWidth("修改日期", defaultWidth: 180))
+                .width(min: 150, ideal: getColumnWidth("修改日期", defaultWidth: Self.defaultColumnWidths["修改日期"] ?? 150))
             }
             .id("table-\(columnWidths.values.sorted().reduce(0, +))") // 当列宽改变时强制重新创建 Table
             .tableStyle(.inset(alternatesRowBackgrounds: true))
-            .background(TableViewColumnWidthTracker(onWidthChange: { columnName, width in
-                columnWidths[columnName] = width
-                PreferencesManager.shared.saveColumnWidths(columnWidths)
-            }))
+            .opacity(columnWidthsApplied ? 1.0 : 0.0)
+            .background(TableViewColumnWidthTracker(
+                columnWidths: columnWidths,
+                onWidthChange: { columnName, width in
+                    columnWidths[columnName] = width
+                    PreferencesManager.shared.saveColumnWidths(columnWidths)
+                },
+                onColumnWidthsApplied: {
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        columnWidthsApplied = true
+                    }
+                }
+            ))
             .onAppear {
                 loadColumnWidths()
+                // 重置状态，等待列宽设置完成
+                columnWidthsApplied = false
             }
             .onChange(of: sortOrder) { oldValue, newValue in
                 // 当排序改变时，保持当前的列宽设置（通过 id 强制重新创建 Table）
+                columnWidthsApplied = false
             }
             .onChange(of: files.count) { oldValue, newValue in
-                // 当文件列表变化时（搜索），保持当前的列宽设置（通过 id 强制重新创建 Table）
+                // 当文件列表变化时（搜索），重置状态等待列宽设置完成
+                columnWidthsApplied = false
             }
             
             Divider()
@@ -171,15 +195,19 @@ struct FileListView: View {
     /// 加载列宽
     private func loadColumnWidths() {
         columnWidths = PreferencesManager.shared.getColumnWidths()
-        // 如果没有保存的设置，使用默认值
-        if columnWidths.isEmpty {
-            columnWidths = [
-                "名称": 300,
-                "路径": 400,
-                "扩展名": 50,  // 新的默认值
-                "大小": 50,    // 新的默认值
-                "修改日期": 180
-            ]
+        
+        // 使用统一的默认值定义
+        // 确保所有必需的列都有值（如果字典为空或缺少某些列，使用默认值）
+        var needsSave = false
+        for (columnName, defaultWidth) in Self.defaultColumnWidths {
+            if columnWidths[columnName] == nil || columnWidths[columnName] == 0 {
+                columnWidths[columnName] = defaultWidth
+                needsSave = true
+            }
+        }
+        
+        // 如果有更新，保存到偏好设置
+        if needsSave {
             PreferencesManager.shared.saveColumnWidths(columnWidths)
         }
     }
@@ -188,17 +216,24 @@ struct FileListView: View {
 
 /// 表格列宽跟踪器
 struct TableViewColumnWidthTracker: NSViewRepresentable {
+    var columnWidths: [String: CGFloat]
     var onWidthChange: (String, CGFloat) -> Void
+    var onColumnWidthsApplied: (() -> Void)?
     
     class Coordinator: NSObject {
+        var columnWidths: [String: CGFloat] = [:]
         var onWidthChange: (String, CGFloat) -> Void
-        var columnNames = ["名称", "路径", "扩展名", "大小", "修改日期"]
+        var onColumnWidthsApplied: (() -> Void)?
+        var columnNames = ["名称", "路径", "文件格式", "大小", "修改日期"]
         var observers: [NSKeyValueObservation] = []
         var setupTableViews: Set<UnsafeMutableRawPointer> = []
         var pendingSaves: [String: Timer] = [:] // 防抖定时器
+        var hasNotifiedApplied = false
         
-        init(onWidthChange: @escaping (String, CGFloat) -> Void) {
+        init(columnWidths: [String: CGFloat], onWidthChange: @escaping (String, CGFloat) -> Void, onColumnWidthsApplied: (() -> Void)?) {
+            self.columnWidths = columnWidths
             self.onWidthChange = onWidthChange
+            self.onColumnWidthsApplied = onColumnWidthsApplied
             super.init()
         }
         
@@ -210,7 +245,7 @@ struct TableViewColumnWidthTracker: NSViewRepresentable {
     }
     
     func makeCoordinator() -> Coordinator {
-        Coordinator(onWidthChange: onWidthChange)
+        Coordinator(columnWidths: columnWidths, onWidthChange: onWidthChange, onColumnWidthsApplied: onColumnWidthsApplied)
     }
     
     func makeNSView(context: Context) -> NSView {
@@ -238,6 +273,11 @@ struct TableViewColumnWidthTracker: NSViewRepresentable {
     }
     
     func updateNSView(_ nsView: NSView, context: Context) {
+        // 更新列宽数据
+        context.coordinator.columnWidths = columnWidths
+        context.coordinator.onColumnWidthsApplied = onColumnWidthsApplied
+        // 重置通知状态，因为视图更新了
+        context.coordinator.hasNotifiedApplied = false
         // 当视图更新时（包括数据变化），立即尝试设置列宽
         DispatchQueue.main.async {
             context.coordinator.setupColumnWidthTracking()
@@ -285,38 +325,56 @@ extension TableViewColumnWidthTracker.Coordinator {
         // 检查是否已经设置过这个 TableView
         let isNewSetup = !setupTableViews.contains(tableViewPointer)
 
-        if !isNewSetup {
-            // 已经设置过监听器
-            return
-        }
-
-        // 标记为已设置
-        setupTableViews.insert(tableViewPointer)
-
         // 启用列调整大小和重新排序
         tableView.allowsColumnResizing = true
         tableView.allowsColumnReordering = true
 
-        // 设置列标题对齐方式
+        // 设置列标题对齐方式和列宽（每次都要应用，确保列宽正确）
+        var allWidthsApplied = true
         for (index, column) in tableView.tableColumns.enumerated() {
             if index < self.columnNames.count {
                 let columnName = self.columnNames[index]
                 let headerCell = column.headerCell
-                // 扩展名列和大小列标题右对齐
-                if columnName == "扩展名" || columnName == "大小" {
+                // 文件格式列和大小列标题右对齐
+                if columnName == "文件格式" || columnName == "大小" {
                     headerCell.alignment = .right
                 } else {
                     headerCell.alignment = .left
                 }
+                
+                // 应用保存的列宽（每次都要应用，确保列宽正确）
+                if let savedWidth = self.columnWidths[columnName], savedWidth > 0 {
+                    // 强制设置列宽
+                    column.width = savedWidth
+                    // 延迟再次设置，确保列宽被正确应用
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+                        column.width = savedWidth
+                    }
+                } else {
+                    allWidthsApplied = false
+                }
+            }
+        }
+        
+        // 如果所有列宽都已应用，且尚未通知，则通知视图
+        if allWidthsApplied && !self.hasNotifiedApplied {
+            self.hasNotifiedApplied = true
+            DispatchQueue.main.async {
+                self.onColumnWidthsApplied?()
             }
         }
 
-        // 只使用 NotificationCenter 监听列调整通知（避免与 KVO 重复）
-        NotificationCenter.default.addObserver(
-            forName: NSTableView.columnDidResizeNotification,
-            object: tableView,
-            queue: .main
-        ) { [weak self] notification in
+        // 只在首次设置时添加监听器
+        if isNewSetup {
+            // 标记为已设置
+            setupTableViews.insert(tableViewPointer)
+
+            // 只使用 NotificationCenter 监听列调整通知（避免与 KVO 重复）
+            NotificationCenter.default.addObserver(
+                forName: NSTableView.columnDidResizeNotification,
+                object: tableView,
+                queue: .main
+            ) { [weak self] notification in
             guard let self = self,
                   let notificationTableView = notification.object as? NSTableView,
                   let userInfo = notification.userInfo,
@@ -336,6 +394,7 @@ extension TableViewColumnWidthTracker.Coordinator {
                 self.pendingSaves.removeValue(forKey: columnName)
             }
             self.pendingSaves[columnName] = timer
+            }
         }
     }
     

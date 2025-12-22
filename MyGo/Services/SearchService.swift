@@ -22,7 +22,7 @@ class SearchService: ObservableObject {
     }
     
     /// 执行搜索
-    func search(query: String, filter: SearchFilter? = nil, useRegex: Bool = false) {
+    func search(query: String, filter: SearchFilter? = nil, useRegex: Bool = false, whitelist: PathKeywordList? = nil, blacklist: PathKeywordList? = nil) {
         guard !query.isEmpty else {
             searchResults = []
             return
@@ -52,7 +52,7 @@ class SearchService: ObservableObject {
         }
         
         // 从数据库搜索
-        let results = databaseManager.searchFiles(parsedQuery: parsed, filter: filter)
+        let results = databaseManager.searchFiles(parsedQuery: parsed, filter: filter, whitelist: whitelist, blacklist: blacklist)
         searchResults = results
         
         // 保存搜索历史

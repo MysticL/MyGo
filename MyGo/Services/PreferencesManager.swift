@@ -16,7 +16,9 @@ class PreferencesManager {
     private let windowHeightKey = "com.mygo.windowHeight"
     private let columnWidthsKey = "com.mygo.columnWidths"
     private let columnWidthsVersionKey = "com.mygo.columnWidthsVersion"
-    private let currentColumnWidthsVersion = 2  // 版本2：扩展名和大小列默认宽度减半
+    private let currentColumnWidthsVersion = 5  // 版本5：强制重置列宽，确保名称列400px正确应用
+    private let pathWhitelistsKey = "com.mygo.pathWhitelists"
+    private let pathBlacklistsKey = "com.mygo.pathBlacklists"
 
     private init() {}
     
@@ -65,6 +67,40 @@ class PreferencesManager {
     /// 重置列宽设置（恢复默认值）
     func resetColumnWidths() {
         UserDefaults.standard.removeObject(forKey: columnWidthsKey)
+    }
+    
+    // MARK: - 路径关键词列表管理
+    
+    /// 保存路径白名单列表
+    func savePathWhitelists(_ lists: [PathKeywordList]) {
+        if let encoded = try? JSONEncoder().encode(lists) {
+            UserDefaults.standard.set(encoded, forKey: pathWhitelistsKey)
+        }
+    }
+    
+    /// 获取路径白名单列表
+    func getPathWhitelists() -> [PathKeywordList] {
+        guard let data = UserDefaults.standard.data(forKey: pathWhitelistsKey),
+              let lists = try? JSONDecoder().decode([PathKeywordList].self, from: data) else {
+            return []
+        }
+        return lists
+    }
+    
+    /// 保存路径黑名单列表
+    func savePathBlacklists(_ lists: [PathKeywordList]) {
+        if let encoded = try? JSONEncoder().encode(lists) {
+            UserDefaults.standard.set(encoded, forKey: pathBlacklistsKey)
+        }
+    }
+    
+    /// 获取路径黑名单列表
+    func getPathBlacklists() -> [PathKeywordList] {
+        guard let data = UserDefaults.standard.data(forKey: pathBlacklistsKey),
+              let lists = try? JSONDecoder().decode([PathKeywordList].self, from: data) else {
+            return []
+        }
+        return lists
     }
 }
 
