@@ -10,12 +10,22 @@ import OSLog
 
 /// 日志管理器
 class Logger {
-    static let shared = Logger()
+    nonisolated static let shared = Logger()
     
     private let logFileURL: URL
     private let fileHandle: FileHandle?
     private let queue = DispatchQueue(label: "com.mygo.logger", qos: .utility)
     private let osLogger = OSLog(subsystem: "com.mygo", category: "MyGo")
+    
+    /// 日志是否启用（从偏好设置读取，非 actor 隔离）
+    nonisolated private var isEnabled: Bool {
+        PreferencesManager.shared.getLogEnabled()
+    }
+    
+    /// 最小日志等级（从偏好设置读取，非 actor 隔离）
+    nonisolated private var minLogLevel: LogLevel {
+        PreferencesManager.shared.getLogLevel()
+    }
     
     private init() {
         // 日志文件路径：应用支持目录/MyGo/logs/app.log
@@ -41,16 +51,28 @@ class Logger {
         fileHandle = try? FileHandle(forWritingTo: logFileURL)
         fileHandle?.seekToEndOfFile()
         
-        // 写入启动日志
-        log("应用启动", level: .info)
+        // 写入启动日志（如果日志启用）
+        if PreferencesManager.shared.getLogEnabled() {
+            log("应用启动", level: .info)
+        }
     }
     
     deinit {
         fileHandle?.closeFile()
     }
     
-    /// 记录日志
-    func log(_ message: String, level: LogLevel = .info, file: String = #file, function: String = #function, line: Int = #line) {
+    /// 记录日志（非 actor 隔离，可在任何线程调用）
+    nonisolated func log(_ message: String, level: LogLevel = .info, file: String = #file, function: String = #function, line: Int = #line) {
+        // 检查日志是否启用
+        guard isEnabled else {
+            return
+        }
+        
+        // 检查日志等级是否满足最小等级要求
+        guard shouldLog(level: level) else {
+            return
+        }
+        
         let timestamp = DateFormatter.logFormatter.string(from: Date())
         let fileName = (file as NSString).lastPathComponent
         let logMessage = "[\(timestamp)] [\(level.rawValue)] [\(fileName):\(line)] \(function) - \(message)\n"
@@ -82,6 +104,16 @@ class Logger {
         }
     }
     
+    /// 判断是否应该记录该等级的日志（非 actor 隔离）
+    nonisolated private func shouldLog(level: LogLevel) -> Bool {
+        let levelOrder: [LogLevel] = [.debug, .info, .warning, .error]
+        guard let minIndex = levelOrder.firstIndex(of: minLogLevel),
+              let currentIndex = levelOrder.firstIndex(of: level) else {
+            return true
+        }
+        return currentIndex >= minIndex
+    }
+    
     /// 获取日志文件路径
     func getLogFileURL() -> URL {
         return logFileURL
@@ -111,7 +143,7 @@ enum LogLevel: String {
 }
 
 extension DateFormatter {
-    static let logFormatter: DateFormatter = {
+    nonisolated static let logFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
         return formatter

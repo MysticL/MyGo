@@ -84,11 +84,24 @@ struct ContentView: View {
             SettingsView(indexManager: indexManager)
         }
         .onAppear {
+            let startTime = Date()
+            Logger.shared.log("ContentView onAppear 开始", level: .debug)
+            
             // 检查是否有索引目录，如果有则自动开始索引
+            let getDirStart = Date()
             let directories = DatabaseManager.shared.getIndexDirectories()
+            let getDirElapsed = Date().timeIntervalSince(getDirStart)
+            Logger.shared.log("获取索引目录列表完成，数量: \(directories.count)，耗时: \(String(format: "%.3f", getDirElapsed))秒", level: .debug)
+            
             if !directories.isEmpty && !indexManager.isIndexing {
+                Logger.shared.log("自动开始索引，目录数: \(directories.count)", level: .debug)
                 indexManager.startIndexing()
+            } else {
+                Logger.shared.log("跳过自动索引（目录为空或正在索引中）", level: .debug)
             }
+            
+            let elapsed = Date().timeIntervalSince(startTime)
+            Logger.shared.log("ContentView onAppear 完成，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
         }
         .onDisappear {
             saveWindowSize()
@@ -111,6 +124,7 @@ struct ContentView: View {
     
     /// 执行搜索（带防抖）
     private func performSearch() {
+        Logger.shared.log("搜索行为: 执行搜索（防抖触发）", level: .debug)
         // 使用筛选器中的设置（包括 useRegex）
         searchService.search(
             query: searchText,
@@ -123,6 +137,7 @@ struct ContentView: View {
     
     /// 立即执行搜索（用于提交或清除按钮）
     private func performSearchImmediately() {
+        Logger.shared.log("搜索行为: 立即执行搜索（用户触发）", level: .info)
         // 取消防抖定时器
         searchDebounceTimer?.invalidate()
         searchDebounceTimer = nil
