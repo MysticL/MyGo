@@ -95,7 +95,7 @@ class FileOperationService {
         process.standardOutput = nil
         
         // 设置环境变量（如果需要）
-        var environment = ProcessInfo.processInfo.environment
+        let environment = ProcessInfo.processInfo.environment
         process.environment = environment
         
         do {

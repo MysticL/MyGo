@@ -18,15 +18,27 @@ class FileIndexManager: ObservableObject {
     private var fileSystemWatcher: FileSystemWatcher?
     private let databaseManager = DatabaseManager.shared
     
+    init() {
+        Logger.shared.log("FileIndexManager init 完成", level: .debug)
+    }
+    
     /// 开始索引
     func startIndexing() {
-        guard !isIndexing else { return }
+        guard !isIndexing else {
+            Logger.shared.log("索引已在进行中，跳过", level: .debug)
+            return
+        }
+        
+        let startTime = Date()
+        Logger.shared.log("开始索引", level: .debug)
         
         isIndexing = true
         indexedCount = 0
         
         indexingTask = Task {
             await performIndexing()
+            let elapsed = Date().timeIntervalSince(startTime)
+            Logger.shared.log("索引任务完成，总耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
         }
     }
     
@@ -79,13 +91,27 @@ class FileIndexManager: ObservableObject {
     /// 索引目录
     private func indexDirectory(at url: URL) async -> Int {
         return await withCheckedContinuation { continuation in
-            // 在同步上下文中收集所有 URL
-            let urls = collectFileURLs(from: url)
-            
-            Task { @MainActor in
-                var count = 0
+            // 在后台线程执行索引任务
+            Task.detached(priority: .utility) { [weak self] in
+                guard let self = self else {
+                    continuation.resume(returning: 0)
+                    return
+                }
                 
-                // 在主线程上处理收集到的 URL
+                let startTime = Date()
+                Logger.shared.log("开始收集文件 URL: \(url.path)", level: .debug)
+                
+                // 在后台线程收集所有 URL（非 actor 隔离方法）
+                let urls = self.collectFileURLs(from: url)
+                
+                let collectElapsed = Date().timeIntervalSince(startTime)
+                Logger.shared.log("文件 URL 收集完成，数量: \(urls.count)，耗时: \(String(format: "%.3f", collectElapsed))秒", level: .debug)
+                
+                // 在后台线程处理文件并批量插入数据库
+                var count = 0
+                var batchItems: [FileItem] = []
+                let batchSize = 100  // 每批处理 100 个文件
+                
                 for fileURL in urls {
                     guard !Task.isCancelled else { break }
                     
@@ -96,24 +122,45 @@ class FileIndexManager: ObservableObject {
                         continue
                     }
                     
+                    // FileItem 初始化在后台线程执行
                     let item = FileItem(url: fileURL)
-                    // 保存到数据库
-                    self.databaseManager.insertOrUpdateFile(item)
+                    batchItems.append(item)
                     count += 1
                     
-                    // 每1000个文件更新一次进度
-                    if count % 1000 == 0 {
-                        self.indexedCount += 1000
+                    // 批量插入数据库
+                    if batchItems.count >= batchSize {
+                        // 在后台线程批量插入
+                        let itemsToInsert = batchItems
+                        self.databaseManager.insertOrUpdateFiles(itemsToInsert)
+                        batchItems.removeAll()
+                        
+                        // 每批更新一次进度（切换到主线程）
+                        await MainActor.run {
+                            self.indexedCount += batchSize
+                        }
                     }
                 }
+                
+                // 插入剩余的文件
+                if !batchItems.isEmpty {
+                    let itemsToInsert = batchItems
+                    self.databaseManager.insertOrUpdateFiles(itemsToInsert)
+                    let remainingCount = batchItems.count
+                    await MainActor.run {
+                        self.indexedCount += remainingCount
+                    }
+                }
+                
+                let processElapsed = Date().timeIntervalSince(startTime)
+                Logger.shared.log("目录索引完成，处理了 \(count) 个文件，耗时: \(String(format: "%.3f", processElapsed))秒", level: .debug)
                 
                 continuation.resume(returning: count)
             }
         }
     }
     
-    /// 在同步上下文中收集文件 URL
-    private func collectFileURLs(from url: URL) -> [URL] {
+    /// 在同步上下文中收集文件 URL（非 actor 隔离，可在后台线程调用）
+    nonisolated private func collectFileURLs(from url: URL) -> [URL] {
         var urls: [URL] = []
         
         guard let enumerator = FileManager.default.enumerator(

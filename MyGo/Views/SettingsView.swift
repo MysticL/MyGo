@@ -599,6 +599,8 @@ struct EditPathKeywordListView: View {
 // MARK: - 日志设置视图
 struct LogSettingsView: View {
     @State private var logPath: String = ""
+    @State private var logEnabled: Bool = false
+    @State private var logLevel: LogLevel = .info
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -609,6 +611,50 @@ struct LogSettingsView: View {
             
             Divider()
             
+            // 日志开关和日志等级（并排显示）
+            HStack(alignment: .top, spacing: 20) {
+                // 日志开关
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("启用日志", isOn: $logEnabled)
+                        .font(.headline)
+                        .onChange(of: logEnabled) { oldValue, newValue in
+                            PreferencesManager.shared.saveLogEnabled(newValue)
+                        }
+                    
+                    Text("启用后，应用会记录运行信息到日志文件。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                // 日志等级
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("日志等级")
+                        .font(.headline)
+                    
+                    Picker("", selection: $logLevel) {
+                        Text("调试 (DEBUG)").tag(LogLevel.debug)
+                        Text("信息 (INFO)").tag(LogLevel.info)
+                        Text("警告 (WARNING)").tag(LogLevel.warning)
+                        Text("错误 (ERROR)").tag(LogLevel.error)
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(!logEnabled)
+                    .onChange(of: logLevel) { oldValue, newValue in
+                        PreferencesManager.shared.saveLogLevel(newValue)
+                    }
+                    
+                    Text("只记录所选等级及以上的日志。例如选择\"信息\"时，会记录信息、警告和错误日志。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding()
+            
+            Divider()
+            
+            // 日志文件位置
             VStack(alignment: .leading, spacing: 12) {
                 Text("日志文件位置")
                     .font(.headline)
@@ -628,14 +674,11 @@ struct LogSettingsView: View {
                         Text("打开日志文件")
                     }
                     .buttonStyle(.bordered)
+                    .disabled(!logEnabled)
                 }
                 .padding()
                 .background(Color(NSColor.controlBackgroundColor))
                 .cornerRadius(8)
-                
-                Text("日志文件会记录应用的运行信息，包括文件打开操作、错误信息等。")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
             .padding()
             
@@ -649,6 +692,7 @@ struct LogSettingsView: View {
                     Text("清空日志")
                 }
                 .buttonStyle(.bordered)
+                .disabled(!logEnabled)
                 
                 Spacer()
             }
@@ -658,12 +702,14 @@ struct LogSettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
-            loadLogPath()
+            loadSettings()
         }
     }
     
-    private func loadLogPath() {
+    private func loadSettings() {
         logPath = Logger.shared.getLogFilePath()
+        logEnabled = PreferencesManager.shared.getLogEnabled()
+        logLevel = PreferencesManager.shared.getLogLevel()
     }
     
     private func openLogFile() {

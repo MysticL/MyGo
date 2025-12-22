@@ -14,31 +14,56 @@ class DatabaseManager {
     
     private var db: OpaquePointer?
     private let dbPath: String
+    /// 数据库操作队列（确保线程安全）
+    private let dbQueue = DispatchQueue(label: "com.mygo.database", qos: .utility)
     
     private init() {
+        let startTime = Date()
+        Logger.shared.log("DatabaseManager init 开始", level: .debug)
+        
         // 数据库文件路径
         let fileManager = FileManager.default
         let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appFolderURL = appSupportURL.appendingPathComponent("MyGo", isDirectory: true)
         
+        Logger.shared.log("应用支持目录: \(appFolderURL.path)", level: .debug)
+        
         // 创建应用支持目录
+        let createDirStart = Date()
         try? fileManager.createDirectory(at: appFolderURL, withIntermediateDirectories: true)
+        let createDirElapsed = Date().timeIntervalSince(createDirStart)
+        Logger.shared.log("创建应用支持目录完成，耗时: \(String(format: "%.3f", createDirElapsed))秒", level: .debug)
         
         dbPath = appFolderURL.appendingPathComponent("index.db").path
+        Logger.shared.log("数据库路径: \(dbPath)", level: .debug)
+        
         openDatabase()
+        
+        let elapsed = Date().timeIntervalSince(startTime)
+        Logger.shared.log("DatabaseManager init 完成，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
     }
     
     /// 打开数据库
     private func openDatabase() {
+        let startTime = Date()
+        Logger.shared.log("开始打开数据库", level: .debug)
+        
         if sqlite3_open(dbPath, &db) != SQLITE_OK {
-            print("无法打开数据库: \(dbPath)")
+            Logger.shared.log("无法打开数据库: \(dbPath)", level: .error)
             return
         }
+        
+        let openElapsed = Date().timeIntervalSince(startTime)
+        Logger.shared.log("数据库打开完成，耗时: \(String(format: "%.3f", openElapsed))秒", level: .debug)
+        
         createTables()
     }
     
     /// 创建表
     private func createTables() {
+        let startTime = Date()
+        Logger.shared.log("开始创建数据库表", level: .debug)
+        
         // 创建文件索引表
         let createFileIndexTable = """
         CREATE TABLE IF NOT EXISTS file_index (
@@ -75,94 +100,189 @@ class DatabaseManager {
         """
         
         if sqlite3_exec(db, createFileIndexTable, nil, nil, nil) != SQLITE_OK {
-            print("创建文件索引表失败")
+            Logger.shared.log("创建文件索引表失败", level: .error)
+        } else {
+            Logger.shared.log("创建文件索引表成功", level: .debug)
         }
         
         if sqlite3_exec(db, createIndexDirectoryTable, nil, nil, nil) != SQLITE_OK {
-            print("创建索引目录表失败")
+            Logger.shared.log("创建索引目录表失败", level: .error)
+        } else {
+            Logger.shared.log("创建索引目录表成功", level: .debug)
         }
         
         if sqlite3_exec(db, createIndexes, nil, nil, nil) != SQLITE_OK {
-            print("创建索引失败")
+            Logger.shared.log("创建索引失败", level: .error)
+        } else {
+            Logger.shared.log("创建索引成功", level: .debug)
         }
+        
+        let elapsed = Date().timeIntervalSince(startTime)
+        Logger.shared.log("数据库表创建完成，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
     }
     
     /// 清空文件索引
     func clearFileIndex() {
-        let deleteSQL = "DELETE FROM file_index;"
-        var statement: OpaquePointer?
-        
-        if sqlite3_prepare_v2(db, deleteSQL, -1, &statement, nil) == SQLITE_OK {
-            if sqlite3_step(statement) == SQLITE_DONE {
-                print("清空文件索引成功")
-            }
-        }
-        sqlite3_finalize(statement)
-    }
-    
-    /// 插入或更新文件索引
-    func insertOrUpdateFile(_ item: FileItem) {
-        let insertSQL = """
-        INSERT OR REPLACE INTO file_index 
-        (path, name, size, is_directory, created_date, modified_date, accessed_date, file_extension, indexed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-        """
-        
-        var statement: OpaquePointer?
-        
-        if sqlite3_prepare_v2(db, insertSQL, -1, &statement, nil) == SQLITE_OK {
-            sqlite3_bind_text(statement, 1, (item.path as NSString).utf8String, -1, nil)
-            sqlite3_bind_text(statement, 2, (item.name as NSString).utf8String, -1, nil)
-            sqlite3_bind_int64(statement, 3, item.size)
-            sqlite3_bind_int(statement, 4, item.isDirectory ? 1 : 0)
+        dbQueue.sync { [weak self] in
+            guard let self = self else { return }
+            let deleteSQL = "DELETE FROM file_index;"
+            var statement: OpaquePointer?
             
-            if let createdDate = item.createdDate {
-                sqlite3_bind_double(statement, 5, createdDate.timeIntervalSince1970)
-            } else {
-                sqlite3_bind_null(statement, 5)
-            }
-            
-            if let modifiedDate = item.modifiedDate {
-                sqlite3_bind_double(statement, 6, modifiedDate.timeIntervalSince1970)
-            } else {
-                sqlite3_bind_null(statement, 6)
-            }
-            
-            if let accessedDate = item.accessedDate {
-                sqlite3_bind_double(statement, 7, accessedDate.timeIntervalSince1970)
-            } else {
-                sqlite3_bind_null(statement, 7)
-            }
-            
-            if let fileExt = item.fileExtension {
-                sqlite3_bind_text(statement, 8, (fileExt as NSString).utf8String, -1, nil)
-            } else {
-                sqlite3_bind_null(statement, 8)
-            }
-            
-            sqlite3_bind_double(statement, 9, Date().timeIntervalSince1970)
-            
-            if sqlite3_step(statement) != SQLITE_DONE {
-                if let errorMsg = sqlite3_errmsg(db) {
-                    print("插入文件索引失败: \(String(cString: errorMsg))")
-                } else {
-                    print("插入文件索引失败")
+            if sqlite3_prepare_v2(self.db, deleteSQL, -1, &statement, nil) == SQLITE_OK {
+                if sqlite3_step(statement) == SQLITE_DONE {
+                    print("清空文件索引成功")
                 }
             }
+            sqlite3_finalize(statement)
         }
-        sqlite3_finalize(statement)
+    }
+    
+    /// 插入或更新文件索引（线程安全）
+    func insertOrUpdateFile(_ item: FileItem) {
+        dbQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            let insertSQL = """
+            INSERT OR REPLACE INTO file_index 
+            (path, name, size, is_directory, created_date, modified_date, accessed_date, file_extension, indexed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """
+            
+            var statement: OpaquePointer?
+            
+            if sqlite3_prepare_v2(self.db, insertSQL, -1, &statement, nil) == SQLITE_OK {
+                sqlite3_bind_text(statement, 1, (item.path as NSString).utf8String, -1, nil)
+                sqlite3_bind_text(statement, 2, (item.name as NSString).utf8String, -1, nil)
+                sqlite3_bind_int64(statement, 3, Int64(item.size))
+                sqlite3_bind_int(statement, 4, item.isDirectory ? 1 : 0)
+                
+                if let createdDate = item.createdDate {
+                    sqlite3_bind_double(statement, 5, createdDate.timeIntervalSince1970)
+                } else {
+                    sqlite3_bind_null(statement, 5)
+                }
+                
+                if let modifiedDate = item.modifiedDate {
+                    sqlite3_bind_double(statement, 6, modifiedDate.timeIntervalSince1970)
+                } else {
+                    sqlite3_bind_null(statement, 6)
+                }
+                
+                if let accessedDate = item.accessedDate {
+                    sqlite3_bind_double(statement, 7, accessedDate.timeIntervalSince1970)
+                } else {
+                    sqlite3_bind_null(statement, 7)
+                }
+                
+                if let fileExt = item.fileExtension {
+                    sqlite3_bind_text(statement, 8, (fileExt as NSString).utf8String, -1, nil)
+                } else {
+                    sqlite3_bind_null(statement, 8)
+                }
+                
+                sqlite3_bind_double(statement, 9, Date().timeIntervalSince1970)
+                
+                if sqlite3_step(statement) != SQLITE_DONE {
+                    if let errorMsg = sqlite3_errmsg(self.db) {
+                        Logger.shared.log("插入文件索引失败: \(String(cString: errorMsg))", level: .error)
+                    } else {
+                        Logger.shared.log("插入文件索引失败", level: .error)
+                    }
+                }
+            }
+            sqlite3_finalize(statement)
+        }
+    }
+    
+    /// 批量插入或更新文件（优化性能，使用事务，同步执行，非 actor 隔离）
+    nonisolated func insertOrUpdateFiles(_ items: [FileItem]) {
+        guard !items.isEmpty else { return }
+        
+        // 使用同步方式确保批量插入完成
+        dbQueue.sync { [weak self] in
+            guard let self = self else { return }
+            
+            let insertSQL = """
+            INSERT OR REPLACE INTO file_index 
+            (path, name, size, is_directory, created_date, modified_date, accessed_date, file_extension, indexed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """
+            
+            var statement: OpaquePointer?
+            
+            guard sqlite3_prepare_v2(self.db, insertSQL, -1, &statement, nil) == SQLITE_OK else {
+                Logger.shared.log("准备批量插入语句失败", level: .error)
+                return
+            }
+            
+            // 开始事务
+            sqlite3_exec(self.db, "BEGIN TRANSACTION", nil, nil, nil)
+            
+            let indexedAt = Date().timeIntervalSince1970
+            
+            for item in items {
+                sqlite3_reset(statement)
+                
+                sqlite3_bind_text(statement, 1, (item.path as NSString).utf8String, -1, nil)
+                sqlite3_bind_text(statement, 2, (item.name as NSString).utf8String, -1, nil)
+                sqlite3_bind_int64(statement, 3, Int64(item.size))
+                sqlite3_bind_int(statement, 4, item.isDirectory ? 1 : 0)
+                
+                if let createdDate = item.createdDate {
+                    sqlite3_bind_double(statement, 5, createdDate.timeIntervalSince1970)
+                } else {
+                    sqlite3_bind_null(statement, 5)
+                }
+                
+                if let modifiedDate = item.modifiedDate {
+                    sqlite3_bind_double(statement, 6, modifiedDate.timeIntervalSince1970)
+                } else {
+                    sqlite3_bind_null(statement, 6)
+                }
+                
+                if let accessedDate = item.accessedDate {
+                    sqlite3_bind_double(statement, 7, accessedDate.timeIntervalSince1970)
+                } else {
+                    sqlite3_bind_null(statement, 7)
+                }
+                
+                if let fileExt = item.fileExtension {
+                    sqlite3_bind_text(statement, 8, (fileExt as NSString).utf8String, -1, nil)
+                } else {
+                    sqlite3_bind_null(statement, 8)
+                }
+                
+                sqlite3_bind_double(statement, 9, indexedAt)
+                
+                if sqlite3_step(statement) != SQLITE_DONE {
+                    if let errorMsg = sqlite3_errmsg(self.db) {
+                        Logger.shared.log("批量插入文件失败: \(item.path) - \(String(cString: errorMsg))", level: .error)
+                    }
+                }
+            }
+            
+            sqlite3_finalize(statement)
+            
+            // 提交事务
+            if sqlite3_exec(self.db, "COMMIT", nil, nil, nil) != SQLITE_OK {
+                Logger.shared.log("提交事务失败", level: .error)
+            }
+        }
     }
     
     /// 删除文件索引
     func deleteFile(path: String) {
-        let deleteSQL = "DELETE FROM file_index WHERE path = ?;"
-        var statement: OpaquePointer?
-        
-        if sqlite3_prepare_v2(db, deleteSQL, -1, &statement, nil) == SQLITE_OK {
-            sqlite3_bind_text(statement, 1, (path as NSString).utf8String, -1, nil)
-            sqlite3_step(statement)
+        dbQueue.async { [weak self] in
+            guard let self = self else { return }
+            let deleteSQL = "DELETE FROM file_index WHERE path = ?;"
+            var statement: OpaquePointer?
+            
+            if sqlite3_prepare_v2(self.db, deleteSQL, -1, &statement, nil) == SQLITE_OK {
+                sqlite3_bind_text(statement, 1, (path as NSString).utf8String, -1, nil)
+                sqlite3_step(statement)
+            }
+            sqlite3_finalize(statement)
         }
-        sqlite3_finalize(statement)
     }
     
     /// 搜索文件（旧版本兼容）
@@ -175,10 +295,12 @@ class DatabaseManager {
     
     /// 搜索文件（使用解析后的查询）
     func searchFiles(parsedQuery: SearchQueryParser.ParsedQuery, filter: SearchFilter?, whitelist: PathKeywordList? = nil, blacklist: PathKeywordList? = nil) -> [FileItem] {
-        var results: [FileItem] = []
-        var searchSQL = "SELECT path, name, size, is_directory, created_date, modified_date, accessed_date, file_extension FROM file_index WHERE 1=1"
-        var conditions: [String] = []
-        var parameters: [String] = []
+        return dbQueue.sync { [weak self] in
+            guard let self = self else { return [FileItem]() }
+            var results: [FileItem] = []
+            var searchSQL = "SELECT path, name, size, is_directory, created_date, modified_date, accessed_date, file_extension FROM file_index WHERE 1=1"
+            var conditions: [String] = []
+            var parameters: [String] = []
         
         // 应用路径约束
         if !parsedQuery.pathConstraints.isEmpty {
@@ -292,7 +414,7 @@ class DatabaseManager {
         
         var statement: OpaquePointer?
         
-        if sqlite3_prepare_v2(db, searchSQL, -1, &statement, nil) == SQLITE_OK {
+        if sqlite3_prepare_v2(self.db, searchSQL, -1, &statement, nil) == SQLITE_OK {
             // 绑定参数
             for (index, param) in parameters.enumerated() {
                 if let doubleValue = Double(param) {
@@ -390,72 +512,96 @@ class DatabaseManager {
         }
         
         return results
+        }
     }
     
     /// 添加索引目录
     func addIndexDirectory(path: String) -> Bool {
-        let insertSQL = "INSERT OR IGNORE INTO index_directories (path, enabled, added_at) VALUES (?, 1, ?);"
-        var statement: OpaquePointer?
-        var success = false
-        
-        if sqlite3_prepare_v2(db, insertSQL, -1, &statement, nil) == SQLITE_OK {
-            sqlite3_bind_text(statement, 1, (path as NSString).utf8String, -1, nil)
-            sqlite3_bind_double(statement, 2, Date().timeIntervalSince1970)
+        return dbQueue.sync { [weak self] in
+            guard let self = self else { return false }
+            let insertSQL = "INSERT OR IGNORE INTO index_directories (path, enabled, added_at) VALUES (?, 1, ?);"
+            var statement: OpaquePointer?
+            var success = false
             
-            if sqlite3_step(statement) == SQLITE_DONE {
-                success = true
+            if sqlite3_prepare_v2(self.db, insertSQL, -1, &statement, nil) == SQLITE_OK {
+                sqlite3_bind_text(statement, 1, (path as NSString).utf8String, -1, nil)
+                sqlite3_bind_double(statement, 2, Date().timeIntervalSince1970)
+                
+                if sqlite3_step(statement) == SQLITE_DONE {
+                    success = true
+                }
             }
+            sqlite3_finalize(statement)
+            return success
         }
-        sqlite3_finalize(statement)
-        return success
     }
     
     /// 删除索引目录
     func removeIndexDirectory(path: String) {
-        let deleteSQL = "DELETE FROM index_directories WHERE path = ?;"
-        var statement: OpaquePointer?
-        
-        if sqlite3_prepare_v2(db, deleteSQL, -1, &statement, nil) == SQLITE_OK {
-            sqlite3_bind_text(statement, 1, (path as NSString).utf8String, -1, nil)
-            sqlite3_step(statement)
+        dbQueue.async { [weak self] in
+            guard let self = self else { return }
+            let deleteSQL = "DELETE FROM index_directories WHERE path = ?;"
+            var statement: OpaquePointer?
+            
+            if sqlite3_prepare_v2(self.db, deleteSQL, -1, &statement, nil) == SQLITE_OK {
+                sqlite3_bind_text(statement, 1, (path as NSString).utf8String, -1, nil)
+                sqlite3_step(statement)
+            }
+            sqlite3_finalize(statement)
         }
-        sqlite3_finalize(statement)
     }
     
     /// 获取所有索引目录
     func getIndexDirectories() -> [String] {
-        var directories: [String] = []
-        let selectSQL = "SELECT path FROM index_directories WHERE enabled = 1 ORDER BY added_at;"
-        var statement: OpaquePointer?
-        
-        if sqlite3_prepare_v2(db, selectSQL, -1, &statement, nil) == SQLITE_OK {
-            while sqlite3_step(statement) == SQLITE_ROW {
-                if let pathCString = sqlite3_column_text(statement, 0) {
-                    directories.append(String(cString: pathCString))
+        return dbQueue.sync { [weak self] in
+            guard let self = self else { return [String]() }
+            let startTime = Date()
+            Logger.shared.log("开始获取索引目录列表", level: .debug)
+            
+            var directories: [String] = []
+            let selectSQL = "SELECT path FROM index_directories WHERE enabled = 1 ORDER BY added_at;"
+            var statement: OpaquePointer?
+            
+            if sqlite3_prepare_v2(self.db, selectSQL, -1, &statement, nil) == SQLITE_OK {
+                while sqlite3_step(statement) == SQLITE_ROW {
+                    if let pathCString = sqlite3_column_text(statement, 0) {
+                        directories.append(String(cString: pathCString))
+                    }
                 }
             }
+            sqlite3_finalize(statement)
+            
+            let elapsed = Date().timeIntervalSince(startTime)
+            Logger.shared.log("获取索引目录列表完成，数量: \(directories.count)，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
+            
+            return directories
         }
-        sqlite3_finalize(statement)
-        return directories
     }
     
     /// 获取索引文件总数
     func getIndexedFileCount() -> Int {
-        let countSQL = "SELECT COUNT(*) FROM file_index;"
-        var statement: OpaquePointer?
-        var count = 0
-        
-        if sqlite3_prepare_v2(db, countSQL, -1, &statement, nil) == SQLITE_OK {
-            if sqlite3_step(statement) == SQLITE_ROW {
-                count = Int(sqlite3_column_int(statement, 0))
+        return dbQueue.sync { [weak self] in
+            guard let self = self else { return 0 }
+            let countSQL = "SELECT COUNT(*) FROM file_index;"
+            var statement: OpaquePointer?
+            var count = 0
+            
+            if sqlite3_prepare_v2(self.db, countSQL, -1, &statement, nil) == SQLITE_OK {
+                if sqlite3_step(statement) == SQLITE_ROW {
+                    count = Int(sqlite3_column_int(statement, 0))
+                }
             }
+            sqlite3_finalize(statement)
+            return count
         }
-        sqlite3_finalize(statement)
-        return count
     }
     
     deinit {
-        sqlite3_close(db)
+        // 等待所有数据库操作完成后再关闭
+        dbQueue.sync { [weak self] in
+            guard let self = self else { return }
+            sqlite3_close(self.db)
+        }
     }
 }
 

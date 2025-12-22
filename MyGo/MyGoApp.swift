@@ -16,11 +16,24 @@ struct MyGoApp: App {
     @StateObject private var permissionChecker = PermissionChecker()
     
     init() {
+        let startTime = Date()
+        Logger.shared.log("=== 应用启动开始 ===", level: .debug)
         // 快捷键功能暂时移除，后续再开发
+        let elapsed = Date().timeIntervalSince(startTime)
+        Logger.shared.log("MyGoApp init 完成，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
     }
     
     var body: some Scene {
-        WindowGroup {
+        let startTime = Date()
+        Logger.shared.log("MyGoApp body 开始构建", level: .debug)
+        
+        let windowSize = PreferencesManager.shared.getWindowSize()
+        Logger.shared.log("读取窗口大小: \(String(format: "%.0f", windowSize.width))x\(String(format: "%.0f", windowSize.height))", level: .debug)
+        
+        let elapsed = Date().timeIntervalSince(startTime)
+        Logger.shared.log("MyGoApp body 构建完成，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
+        
+        return WindowGroup {
             RootView()
                 .environmentObject(indexManager)
                 .environmentObject(appState)
@@ -28,8 +41,8 @@ struct MyGoApp: App {
         }
         .windowStyle(.automatic)
         .defaultSize(
-            width: permissionChecker.hasPermission ? PreferencesManager.shared.getWindowSize().width : 600,
-            height: permissionChecker.hasPermission ? PreferencesManager.shared.getWindowSize().height : 700
+            width: permissionChecker.hasPermission ? windowSize.width : 600,
+            height: permissionChecker.hasPermission ? windowSize.height : 700
         )
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -67,16 +80,28 @@ class PermissionChecker: ObservableObject {
     @Published var hasPermission = false
     
     init() {
+        let startTime = Date()
+        Logger.shared.log("PermissionChecker init 开始", level: .debug)
         checkPermission()
+        let elapsed = Date().timeIntervalSince(startTime)
+        Logger.shared.log("PermissionChecker init 完成，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
     }
     
     func checkPermission() {
+        let startTime = Date()
+        Logger.shared.log("开始检查权限", level: .debug)
+        
         // 检查文件访问权限
         let hasFileAccess = PermissionManager.shared.checkFileAccessPermission()
+        Logger.shared.log("文件访问权限: \(hasFileAccess)", level: .debug)
+        
         let hasFullDiskAccess = PermissionManager.shared.checkFullDiskAccessPermission()
+        Logger.shared.log("完整磁盘访问权限: \(hasFullDiskAccess)", level: .debug)
         
         // 至少需要文件访问权限
         hasPermission = hasFileAccess || hasFullDiskAccess
+        let elapsed = Date().timeIntervalSince(startTime)
+        Logger.shared.log("权限检查完成，结果: \(hasPermission)，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
     }
 }
 
@@ -95,7 +120,11 @@ struct RootView: View {
             }
         }
         .onAppear {
+            let appearStartTime = Date()
+            Logger.shared.log("RootView onAppear 开始", level: .debug)
             permissionChecker.checkPermission()
+            let elapsed = Date().timeIntervalSince(appearStartTime)
+            Logger.shared.log("RootView onAppear 完成，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
         }
     }
 }

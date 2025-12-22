@@ -20,7 +20,7 @@ struct FileItem: Identifiable, Hashable {
     let accessedDate: Date?
     let fileExtension: String?
     
-    init(url: URL) {
+    nonisolated init(url: URL) {
         self.id = UUID()
         self.url = url
         self.name = url.lastPathComponent

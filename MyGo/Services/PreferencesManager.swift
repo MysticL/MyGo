@@ -10,7 +10,7 @@ import SwiftUI
 
 /// 偏好设置管理器
 class PreferencesManager {
-    static let shared = PreferencesManager()
+    nonisolated static let shared = PreferencesManager()
 
     private let windowWidthKey = "com.mygo.windowWidth"
     private let windowHeightKey = "com.mygo.windowHeight"
@@ -19,6 +19,8 @@ class PreferencesManager {
     private let currentColumnWidthsVersion = 5  // 版本5：强制重置列宽，确保名称列400px正确应用
     private let pathWhitelistsKey = "com.mygo.pathWhitelists"
     private let pathBlacklistsKey = "com.mygo.pathBlacklists"
+    private let logEnabledKey = "com.mygo.logEnabled"
+    private let logLevelKey = "com.mygo.logLevel"
 
     private init() {}
     
@@ -45,6 +47,7 @@ class PreferencesManager {
     func saveColumnWidths(_ widths: [String: CGFloat]) {
         let dict = widths.mapValues { $0 }
         UserDefaults.standard.set(dict, forKey: columnWidthsKey)
+        Logger.shared.log("列宽已保存: \(widths.map { "\($0.key)=\(String(format: "%.1f", $0.value))" }.joined(separator: ", "))", level: .info)
     }
     
     /// 获取列宽
@@ -53,15 +56,19 @@ class PreferencesManager {
 
         // 如果版本不匹配，重置列宽设置
         if savedVersion != currentColumnWidthsVersion {
+            Logger.shared.log("列宽版本不匹配 (保存版本: \(savedVersion), 当前版本: \(currentColumnWidthsVersion))，重置列宽设置", level: .info)
             resetColumnWidths()
             UserDefaults.standard.set(currentColumnWidthsVersion, forKey: columnWidthsVersionKey)
             return [:]  // 返回空字典，让调用方使用默认值
         }
 
         guard let dict = UserDefaults.standard.dictionary(forKey: columnWidthsKey) as? [String: Double] else {
+            Logger.shared.log("列宽读取: 未找到保存的列宽设置，返回空字典", level: .info)
             return [:]
         }
-        return dict.mapValues { CGFloat($0) }
+        let widths = dict.mapValues { CGFloat($0) }
+        Logger.shared.log("列宽已读取: \(widths.map { "\($0.key)=\(String(format: "%.1f", $0.value))" }.joined(separator: ", "))", level: .info)
+        return widths
     }
 
     /// 重置列宽设置（恢复默认值）
@@ -101,6 +108,36 @@ class PreferencesManager {
             return []
         }
         return lists
+    }
+    
+    // MARK: - 日志设置管理
+    
+    /// 保存日志开关状态
+    func saveLogEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: logEnabledKey)
+    }
+    
+    /// 获取日志开关状态（默认关闭，非 actor 隔离）
+    nonisolated func getLogEnabled() -> Bool {
+        // 如果从未设置过，返回 false（默认关闭）
+        if UserDefaults.standard.object(forKey: logEnabledKey) == nil {
+            return false
+        }
+        return UserDefaults.standard.bool(forKey: logEnabledKey)
+    }
+    
+    /// 保存日志等级
+    func saveLogLevel(_ level: LogLevel) {
+        UserDefaults.standard.set(level.rawValue, forKey: logLevelKey)
+    }
+    
+    /// 获取日志等级（默认 debug，非 actor 隔离）
+    nonisolated func getLogLevel() -> LogLevel {
+        guard let levelString = UserDefaults.standard.string(forKey: logLevelKey),
+              let level = LogLevel(rawValue: levelString) else {
+            return .debug  // 默认等级为最详细的DEBUG
+        }
+        return level
     }
 }
 
