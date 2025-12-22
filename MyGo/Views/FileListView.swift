@@ -67,10 +67,12 @@ struct FileListView: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) {
+                        Logger.shared.log("双击文件: \(file.name) (路径: \(file.path))", level: .info)
                         onFileAction(file, .open)
                     }
                     .contextMenu {
                         Button("打开") {
+                            Logger.shared.log("右键菜单打开文件: \(file.name)", level: .info)
                             onFileAction(file, .open)
                         }
                         Button("在 Finder 中显示") {

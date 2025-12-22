@@ -132,6 +132,7 @@ struct ContentView: View {
     
     /// 处理文件操作
     private func handleFileAction(_ item: FileItem, action: FileListView.FileAction) {
+        Logger.shared.log("处理文件操作: \(action) - \(item.name)", level: .info)
         switch action {
         case .open:
             FileOperationService.shared.openFile(item)
