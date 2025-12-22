@@ -50,6 +50,11 @@ struct SettingsView: View {
                     .tabItem {
                         Label("路径关键词", systemImage: "list.bullet")
                     }
+                
+                LogSettingsView()
+                    .tabItem {
+                        Label("日志", systemImage: "doc.text")
+                    }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -588,6 +593,82 @@ struct EditPathKeywordListView: View {
                 keywords = list.keywords.isEmpty ? [""] : list.keywords
             }
         }
+    }
+}
+
+// MARK: - 日志设置视图
+struct LogSettingsView: View {
+    @State private var logPath: String = ""
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("日志设置")
+                .font(.title2)
+                .fontWeight(.bold)
+                .padding()
+            
+            Divider()
+            
+            VStack(alignment: .leading, spacing: 12) {
+                Text("日志文件位置")
+                    .font(.headline)
+                
+                HStack {
+                    Text(logPath.isEmpty ? "加载中..." : logPath)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        openLogFile()
+                    }) {
+                        Image(systemName: "folder")
+                        Text("打开日志文件")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding()
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(8)
+                
+                Text("日志文件会记录应用的运行信息，包括文件打开操作、错误信息等。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding()
+            
+            Divider()
+            
+            HStack {
+                Button(action: {
+                    Logger.shared.clearLog()
+                }) {
+                    Image(systemName: "trash")
+                    Text("清空日志")
+                }
+                .buttonStyle(.bordered)
+                
+                Spacer()
+            }
+            .padding()
+            
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            loadLogPath()
+        }
+    }
+    
+    private func loadLogPath() {
+        logPath = Logger.shared.getLogFilePath()
+    }
+    
+    private func openLogFile() {
+        let url = Logger.shared.getLogFileURL()
+        NSWorkspace.shared.open(url)
     }
 }
 
