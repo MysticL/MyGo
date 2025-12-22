@@ -31,16 +31,16 @@ struct MyGoApp: App {
         )
         .commands {
             CommandGroup(replacing: .newItem) {}
-            
-            // MyGo 菜单
-            CommandMenu("MyGo") {
+
+            // 将设置和重新索引都移到应用菜单中
+            CommandGroup(replacing: .appSettings) {
                 Button("设置...") {
                     appState.showSettings = true
                 }
                 .keyboardShortcut(",", modifiers: .command)
-                
+
                 Divider()
-                
+
                 Button("重新索引") {
                     if indexManager.isIndexing {
                         indexManager.stopIndexing()
@@ -50,12 +50,6 @@ struct MyGoApp: App {
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(indexManager.isIndexing)
-                
-                Divider()
-                
-                Button("关于 MyGo") {
-                    // 可以添加关于对话框
-                }
             }
         }
     }

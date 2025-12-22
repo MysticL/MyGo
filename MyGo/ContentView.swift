@@ -18,6 +18,9 @@ struct ContentView: View {
     @State private var filter = SearchFilter()
     @State private var sortOption = SortOption.name
     @State private var ascending = true
+    @State private var searchDebounceTimer: Timer?
+    @State private var selectedWhitelist: PathKeywordList?
+    @State private var selectedBlacklist: PathKeywordList?
     
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -27,9 +30,27 @@ struct ContentView: View {
                 SearchBarView(
                     searchText: $searchText,
                     showFilter: $showFilter,
-                    onSearch: performSearch
+                    selectedWhitelist: $selectedWhitelist,
+                    selectedBlacklist: $selectedBlacklist,
+                    onSearch: {
+                        // 立即执行搜索（用于提交或清除按钮）
+                        performSearchImmediately()
+                    }
                 )
                 .padding()
+                .onChange(of: searchText) { oldValue, newValue in
+                    // 防抖：延迟搜索，避免输入时卡顿
+                    searchDebounceTimer?.invalidate()
+                    searchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+                        performSearch()
+                    }
+                }
+                .onChange(of: selectedWhitelist) { oldValue, newValue in
+                    performSearchImmediately()
+                }
+                .onChange(of: selectedBlacklist) { oldValue, newValue in
+                    performSearchImmediately()
+                }
                 
                 Divider()
                 
@@ -45,7 +66,7 @@ struct ContentView: View {
             if showFilter {
                 FilterView(filter: $filter, isPresented: $showFilter)
                     .onChange(of: filter) {
-                        performSearch()
+                        performSearchImmediately()
                     }
                     .background(Color(NSColor.windowBackgroundColor))
                     .shadow(color: Color.black.opacity(0.2), radius: 8, x: -4, y: 0)
@@ -71,6 +92,9 @@ struct ContentView: View {
         }
         .onDisappear {
             saveWindowSize()
+            // 清理防抖定时器
+            searchDebounceTimer?.invalidate()
+            searchDebounceTimer = nil
         }
     }
     
@@ -85,14 +109,25 @@ struct ContentView: View {
         }
     }
     
-    /// 执行搜索
+    /// 执行搜索（带防抖）
     private func performSearch() {
         // 使用筛选器中的设置（包括 useRegex）
         searchService.search(
             query: searchText,
             filter: showFilter ? filter : nil,
-            useRegex: filter.useRegex
+            useRegex: filter.useRegex,
+            whitelist: selectedWhitelist,
+            blacklist: selectedBlacklist
         )
+    }
+    
+    /// 立即执行搜索（用于提交或清除按钮）
+    private func performSearchImmediately() {
+        // 取消防抖定时器
+        searchDebounceTimer?.invalidate()
+        searchDebounceTimer = nil
+        // 立即执行搜索
+        performSearch()
     }
     
     /// 处理文件操作

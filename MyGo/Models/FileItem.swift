@@ -69,6 +69,40 @@ struct FileItem: Identifiable, Hashable {
         return url.deletingLastPathComponent().path
     }
     
+    /// 获取缩短的目录路径（去掉前两级目录）
+    var shortenedDirectoryPath: String {
+        let fullPath = directoryPath
+        
+        // 处理以 / 开头的绝对路径
+        if fullPath.hasPrefix("/") {
+            let pathWithoutLeadingSlash = String(fullPath.dropFirst())
+            let components = pathWithoutLeadingSlash.split(separator: "/", omittingEmptySubsequences: true)
+            
+            // 如果路径组件少于2个，返回原路径
+            guard components.count > 2 else {
+                return fullPath
+            }
+            
+            // 去掉前两级目录（索引0和1）
+            // 例如：Users/b-60060526/Documents/... -> Documents/...
+            let remainingComponents = Array(components.dropFirst(2))
+            
+            // 重新组合路径，确保以 / 开头
+            if remainingComponents.isEmpty {
+                return "/"
+            }
+            return "/" + remainingComponents.joined(separator: "/")
+        } else {
+            // 相对路径，直接处理
+            let components = fullPath.split(separator: "/", omittingEmptySubsequences: true)
+            guard components.count > 2 else {
+                return fullPath
+            }
+            let remainingComponents = Array(components.dropFirst(2))
+            return remainingComponents.joined(separator: "/")
+        }
+    }
+    
     /// 用于排序的扩展名（空字符串用于无扩展名的文件）
     var sortableExtension: String {
         return fileExtension ?? ""

@@ -10,8 +10,13 @@ import SwiftUI
 struct SearchBarView: View {
     @Binding var searchText: String
     @Binding var showFilter: Bool
+    @Binding var selectedWhitelist: PathKeywordList?
+    @Binding var selectedBlacklist: PathKeywordList?
     @FocusState private var isFocused: Bool
     var onSearch: () -> Void
+    
+    @State private var whitelists: [PathKeywordList] = []
+    @State private var blacklists: [PathKeywordList] = []
     
     var body: some View {
         HStack(spacing: 8) {
@@ -22,9 +27,7 @@ struct SearchBarView: View {
                 .textFieldStyle(.plain)
                 .focused($isFocused)
                 .onSubmit {
-                    onSearch()
-                }
-                .onChange(of: searchText) {
+                    // 提交时立即搜索
                     onSearch()
                 }
             
@@ -37,6 +40,32 @@ struct SearchBarView: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
+            }
+            
+            // 路径白名单下拉框
+            Picker("路径白名单", selection: $selectedWhitelist) {
+                Text("无").tag(nil as PathKeywordList?)
+                ForEach(whitelists) { list in
+                    Text(list.name).tag(list as PathKeywordList?)
+                }
+            }
+            .pickerStyle(.menu)
+            .fixedSize()
+            .onChange(of: selectedWhitelist) { oldValue, newValue in
+                onSearch()
+            }
+            
+            // 路径黑名单下拉框
+            Picker("路径黑名单", selection: $selectedBlacklist) {
+                Text("无").tag(nil as PathKeywordList?)
+                ForEach(blacklists) { list in
+                    Text(list.name).tag(list as PathKeywordList?)
+                }
+            }
+            .pickerStyle(.menu)
+            .fixedSize()
+            .onChange(of: selectedBlacklist) { oldValue, newValue in
+                onSearch()
             }
             
             // 搜索语法提示
@@ -73,7 +102,16 @@ struct SearchBarView: View {
         .cornerRadius(8)
         .onAppear {
             isFocused = true
+            loadLists()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("PathKeywordListsUpdated"))) { _ in
+            loadLists()
+        }
+    }
+    
+    private func loadLists() {
+        whitelists = PreferencesManager.shared.getPathWhitelists()
+        blacklists = PreferencesManager.shared.getPathBlacklists()
     }
 }
 
