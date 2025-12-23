@@ -511,6 +511,11 @@ class DatabaseManager {
             }
         }
         
+        // 过滤掉不存在的文件（被移动或删除的文件）
+        results = results.filter { item in
+            FileManager.default.fileExists(atPath: item.path)
+        }
+        
         return results
         }
     }
@@ -593,6 +598,70 @@ class DatabaseManager {
             }
             sqlite3_finalize(statement)
             return count
+        }
+    }
+    
+    /// 清理已删除的文件（验证数据库中记录的文件是否仍然存在）
+    func cleanupDeletedFiles() {
+        dbQueue.async { [weak self] in
+            guard let self = self else { return }
+            let startTime = Date()
+            Logger.shared.log("开始清理已删除的文件", level: .debug)
+            
+            let selectSQL = "SELECT path FROM file_index;"
+            var statement: OpaquePointer?
+            var deletedPaths: [String] = []
+            var totalCount = 0
+            
+            if sqlite3_prepare_v2(self.db, selectSQL, -1, &statement, nil) == SQLITE_OK {
+                while sqlite3_step(statement) == SQLITE_ROW {
+                    if let pathCString = sqlite3_column_text(statement, 0) {
+                        let path = String(cString: pathCString)
+                        totalCount += 1
+                        
+                        // 检查文件是否存在
+                        if !FileManager.default.fileExists(atPath: path) {
+                            deletedPaths.append(path)
+                        }
+                    }
+                }
+            }
+            sqlite3_finalize(statement)
+            
+            // 批量删除不存在的文件
+            if !deletedPaths.isEmpty {
+                let deleteSQL = "DELETE FROM file_index WHERE path = ?;"
+                var deleteStatement: OpaquePointer?
+                
+                guard sqlite3_prepare_v2(self.db, deleteSQL, -1, &deleteStatement, nil) == SQLITE_OK else {
+                    Logger.shared.log("准备删除语句失败", level: .error)
+                    return
+                }
+                
+                // 开始事务
+                sqlite3_exec(self.db, "BEGIN TRANSACTION", nil, nil, nil)
+                
+                for path in deletedPaths {
+                    sqlite3_reset(deleteStatement)
+                    sqlite3_bind_text(deleteStatement, 1, (path as NSString).utf8String, -1, nil)
+                    
+                    if sqlite3_step(deleteStatement) != SQLITE_DONE {
+                        if let errorMsg = sqlite3_errmsg(self.db) {
+                            Logger.shared.log("删除文件索引失败: \(path) - \(String(cString: errorMsg))", level: .error)
+                        }
+                    }
+                }
+                
+                sqlite3_finalize(deleteStatement)
+                
+                // 提交事务
+                if sqlite3_exec(self.db, "COMMIT", nil, nil, nil) != SQLITE_OK {
+                    Logger.shared.log("提交清理事务失败", level: .error)
+                }
+            }
+            
+            let elapsed = Date().timeIntervalSince(startTime)
+            Logger.shared.log("清理完成，检查了 \(totalCount) 个文件，删除了 \(deletedPaths.count) 个不存在的文件记录，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
         }
     }
     

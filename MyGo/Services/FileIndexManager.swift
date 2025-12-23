@@ -84,6 +84,9 @@ class FileIndexManager: ObservableObject {
             self.isIndexing = false
         }
         
+        // 清理已删除的文件
+        databaseManager.cleanupDeletedFiles()
+        
         // 启动文件系统监控
         startFileSystemWatcher()
     }
