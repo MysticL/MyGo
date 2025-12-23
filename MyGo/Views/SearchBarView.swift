@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+import Combine
+import AppKit
 
 struct SearchBarView: View {
     @Binding var searchText: String
@@ -101,8 +103,12 @@ struct SearchBarView: View {
         .background(Color(NSColor.controlBackgroundColor))
         .cornerRadius(8)
         .onAppear {
-            isFocused = true
             loadLists()
+            setFocusWhenWindowReady()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            // 当窗口成为 key window 时设置焦点
+            setFocusWhenWindowReady()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("PathKeywordListsUpdated"))) { _ in
             loadLists()
@@ -112,6 +118,16 @@ struct SearchBarView: View {
     private func loadLists() {
         whitelists = PreferencesManager.shared.getPathWhitelists()
         blacklists = PreferencesManager.shared.getPathBlacklists()
+    }
+    
+    /// 设置焦点，等待窗口准备好
+    private func setFocusWhenWindowReady() {
+        // 延迟设置焦点，确保窗口完全准备好
+        Task { @MainActor in
+            // 等待一小段时间确保窗口和视图层次结构完全准备好
+            try? await Task.sleep(nanoseconds: 150_000_000) // 0.15秒
+            isFocused = true
+        }
     }
 }
 

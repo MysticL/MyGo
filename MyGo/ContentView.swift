@@ -46,9 +46,13 @@ struct ContentView: View {
                     }
                 }
                 .onChange(of: selectedWhitelist) { oldValue, newValue in
+                    // 保存选中的白名单ID
+                    PreferencesManager.shared.saveSelectedWhitelistId(newValue?.id)
                     performSearchImmediately()
                 }
                 .onChange(of: selectedBlacklist) { oldValue, newValue in
+                    // 保存选中的黑名单ID
+                    PreferencesManager.shared.saveSelectedBlacklistId(newValue?.id)
                     performSearchImmediately()
                 }
                 
@@ -65,7 +69,9 @@ struct ContentView: View {
             // 右侧筛选面板（弹窗）
             if showFilter {
                 FilterView(filter: $filter, isPresented: $showFilter)
-                    .onChange(of: filter) {
+                    .onChange(of: filter) { oldValue, newValue in
+                        // 保存筛选器设置
+                        PreferencesManager.shared.saveSearchFilter(newValue)
                         performSearchImmediately()
                     }
                     .background(Color(NSColor.windowBackgroundColor))
@@ -87,6 +93,9 @@ struct ContentView: View {
             let startTime = Date()
             Logger.shared.log("ContentView onAppear 开始", level: .debug)
             
+            // 恢复保存的设置
+            restoreSettings()
+            
             // 检查是否有索引目录，如果有则自动开始索引
             let getDirStart = Date()
             let directories = DatabaseManager.shared.getIndexDirectories()
@@ -103,11 +112,48 @@ struct ContentView: View {
             let elapsed = Date().timeIntervalSince(startTime)
             Logger.shared.log("ContentView onAppear 完成，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("PathKeywordListsUpdated"))) { _ in
+            // 当黑白名单列表更新时，检查当前选中的列表是否仍然存在
+            let whitelists = PreferencesManager.shared.getPathWhitelists()
+            if let currentWhitelist = selectedWhitelist,
+               !whitelists.contains(where: { $0.id == currentWhitelist.id }) {
+                // 当前选中的白名单已被删除，清除选中状态
+                selectedWhitelist = nil
+                PreferencesManager.shared.saveSelectedWhitelistId(nil)
+            }
+            
+            let blacklists = PreferencesManager.shared.getPathBlacklists()
+            if let currentBlacklist = selectedBlacklist,
+               !blacklists.contains(where: { $0.id == currentBlacklist.id }) {
+                // 当前选中的黑名单已被删除，清除选中状态
+                selectedBlacklist = nil
+                PreferencesManager.shared.saveSelectedBlacklistId(nil)
+            }
+        }
         .onDisappear {
             saveWindowSize()
             // 清理防抖定时器
             searchDebounceTimer?.invalidate()
             searchDebounceTimer = nil
+        }
+    }
+    
+    /// 恢复保存的设置
+    private func restoreSettings() {
+        // 恢复选中的黑白名单
+        let whitelists = PreferencesManager.shared.getPathWhitelists()
+        if let savedWhitelistId = PreferencesManager.shared.getSelectedWhitelistId() {
+            selectedWhitelist = whitelists.first { $0.id == savedWhitelistId }
+        }
+        
+        let blacklists = PreferencesManager.shared.getPathBlacklists()
+        if let savedBlacklistId = PreferencesManager.shared.getSelectedBlacklistId() {
+            selectedBlacklist = blacklists.first { $0.id == savedBlacklistId }
+        }
+        
+        // 恢复筛选器设置
+        if let savedFilter = PreferencesManager.shared.getSearchFilter() {
+            filter = savedFilter
         }
     }
     

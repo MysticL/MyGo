@@ -148,10 +148,7 @@ struct FilterView: View {
                     // 清除过滤器
                     Button("清除所有过滤器") {
                         filter = SearchFilter()
-                        fileExtensionsText = ""
-                        minSizeText = ""
-                        maxSizeText = ""
-                        showDateFilter = false
+                        syncUIFromFilter()
                     }
                     .buttonStyle(.bordered)
                 }
@@ -159,6 +156,49 @@ struct FilterView: View {
             }
         }
         .frame(width: 320)
+        .onAppear {
+            syncUIFromFilter()
+        }
+        .onChange(of: filter.minDate) { oldValue, newValue in
+            // 当日期被设置时，确保日期过滤器显示
+            if newValue != nil && !showDateFilter {
+                showDateFilter = true
+            }
+        }
+        .onChange(of: filter.maxDate) { oldValue, newValue in
+            // 当日期被设置时，确保日期过滤器显示
+            if newValue != nil && !showDateFilter {
+                showDateFilter = true
+            }
+        }
+    }
+    
+    /// 从筛选器同步UI状态
+    private func syncUIFromFilter() {
+        // 同步文件扩展名
+        if let extensions = filter.fileExtensions, !extensions.isEmpty {
+            fileExtensionsText = extensions.sorted().joined(separator: ", ")
+        } else {
+            fileExtensionsText = ""
+        }
+        
+        // 同步文件大小
+        if let minSize = filter.minSize {
+            let mb = Double(minSize) / (1024 * 1024)
+            minSizeText = String(format: "%.2f", mb)
+        } else {
+            minSizeText = ""
+        }
+        
+        if let maxSize = filter.maxSize {
+            let mb = Double(maxSize) / (1024 * 1024)
+            maxSizeText = String(format: "%.2f", mb)
+        } else {
+            maxSizeText = ""
+        }
+        
+        // 同步日期过滤器显示状态
+        showDateFilter = filter.minDate != nil || filter.maxDate != nil
     }
 }
 
