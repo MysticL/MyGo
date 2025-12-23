@@ -19,6 +19,9 @@ class PreferencesManager {
     private let currentColumnWidthsVersion = 5  // 版本5：强制重置列宽，确保名称列400px正确应用
     private let pathWhitelistsKey = "com.mygo.pathWhitelists"
     private let pathBlacklistsKey = "com.mygo.pathBlacklists"
+    private let selectedWhitelistIdKey = "com.mygo.selectedWhitelistId"
+    private let selectedBlacklistIdKey = "com.mygo.selectedBlacklistId"
+    private let searchFilterKey = "com.mygo.searchFilter"
     private let logEnabledKey = "com.mygo.logEnabled"
     private let logLevelKey = "com.mygo.logLevel"
 
@@ -108,6 +111,62 @@ class PreferencesManager {
             return []
         }
         return lists
+    }
+    
+    // MARK: - 选中的黑白名单管理
+    
+    /// 保存选中的白名单ID
+    func saveSelectedWhitelistId(_ id: UUID?) {
+        if let id = id {
+            UserDefaults.standard.set(id.uuidString, forKey: selectedWhitelistIdKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: selectedWhitelistIdKey)
+        }
+    }
+    
+    /// 获取选中的白名单ID
+    func getSelectedWhitelistId() -> UUID? {
+        guard let idString = UserDefaults.standard.string(forKey: selectedWhitelistIdKey),
+              let id = UUID(uuidString: idString) else {
+            return nil
+        }
+        return id
+    }
+    
+    /// 保存选中的黑名单ID
+    func saveSelectedBlacklistId(_ id: UUID?) {
+        if let id = id {
+            UserDefaults.standard.set(id.uuidString, forKey: selectedBlacklistIdKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: selectedBlacklistIdKey)
+        }
+    }
+    
+    /// 获取选中的黑名单ID
+    func getSelectedBlacklistId() -> UUID? {
+        guard let idString = UserDefaults.standard.string(forKey: selectedBlacklistIdKey),
+              let id = UUID(uuidString: idString) else {
+            return nil
+        }
+        return id
+    }
+    
+    // MARK: - 搜索过滤器管理
+    
+    /// 保存搜索过滤器
+    func saveSearchFilter(_ filter: SearchFilter) {
+        if let encoded = try? JSONEncoder().encode(filter) {
+            UserDefaults.standard.set(encoded, forKey: searchFilterKey)
+        }
+    }
+    
+    /// 获取搜索过滤器
+    func getSearchFilter() -> SearchFilter? {
+        guard let data = UserDefaults.standard.data(forKey: searchFilterKey),
+              let filter = try? JSONDecoder().decode(SearchFilter.self, from: data) else {
+            return nil
+        }
+        return filter
     }
     
     // MARK: - 日志设置管理
