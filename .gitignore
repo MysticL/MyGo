@@ -38,3 +38,5 @@ MyGo*.app/
 
 # Logs
 *.log
+.trae/
+.trae/
