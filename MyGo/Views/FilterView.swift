@@ -46,14 +46,14 @@ struct FilterView: View {
                             .padding(.bottom, 4)
                         
                         Toggle("仅文件", isOn: $filter.fileOnly)
-                            .onChange(of: filter.fileOnly) { oldValue, newValue in
+                            .onChange(of: filter.fileOnly) { _, newValue in
                                 if newValue {
                                     filter.folderOnly = false
                                 }
                             }
                         
                         Toggle("仅文件夹", isOn: $filter.folderOnly)
-                            .onChange(of: filter.folderOnly) { oldValue, newValue in
+                            .onChange(of: filter.folderOnly) { _, newValue in
                                 if newValue {
                                     filter.fileOnly = false
                                 }
@@ -77,7 +77,7 @@ struct FilterView: View {
                             .foregroundColor(.secondary)
                         TextField("例如: jpg, mp4, pdf", text: $fileExtensionsText)
                             .textFieldStyle(.roundedBorder)
-                            .onChange(of: fileExtensionsText) { oldValue, newValue in
+                            .onChange(of: fileExtensionsText) { _, newValue in
                                 let extensions = newValue
                                     .split(separator: ",")
                                     .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
@@ -94,7 +94,7 @@ struct FilterView: View {
                                 .foregroundColor(.secondary)
                             TextField("0", text: $minSizeText)
                                 .textFieldStyle(.roundedBorder)
-                                .onChange(of: minSizeText) { oldValue, newValue in
+                                .onChange(of: minSizeText) { _, newValue in
                                     if let mb = Double(newValue), mb > 0 {
                                         filter.minSize = Int64(mb * 1024 * 1024)
                                     } else {
@@ -109,7 +109,7 @@ struct FilterView: View {
                                 .foregroundColor(.secondary)
                             TextField("无限制", text: $maxSizeText)
                                 .textFieldStyle(.roundedBorder)
-                                .onChange(of: maxSizeText) { oldValue, newValue in
+                                .onChange(of: maxSizeText) { _, newValue in
                                     if let mb = Double(newValue), mb > 0 {
                                         filter.maxSize = Int64(mb * 1024 * 1024)
                                     } else {
@@ -159,13 +159,20 @@ struct FilterView: View {
         .onAppear {
             syncUIFromFilter()
         }
-        .onChange(of: filter.minDate) { oldValue, newValue in
+        .onChange(of: showDateFilter) { _, newValue in
+            // 关闭日期过滤时，清空日期条件，确保不再生效
+            if !newValue {
+                filter.minDate = nil
+                filter.maxDate = nil
+            }
+        }
+        .onChange(of: filter.minDate) { _, newValue in
             // 当日期被设置时，确保日期过滤器显示
             if newValue != nil && !showDateFilter {
                 showDateFilter = true
             }
         }
-        .onChange(of: filter.maxDate) { oldValue, newValue in
+        .onChange(of: filter.maxDate) { _, newValue in
             // 当日期被设置时，确保日期过滤器显示
             if newValue != nil && !showDateFilter {
                 showDateFilter = true
@@ -201,4 +208,3 @@ struct FilterView: View {
         showDateFilter = filter.minDate != nil || filter.maxDate != nil
     }
 }
-

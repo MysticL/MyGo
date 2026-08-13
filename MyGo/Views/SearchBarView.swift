@@ -53,7 +53,7 @@ struct SearchBarView: View {
             }
             .pickerStyle(.menu)
             .fixedSize()
-            .onChange(of: selectedWhitelist) { oldValue, newValue in
+            .onChange(of: selectedWhitelist) { _, _ in
                 onSearch()
             }
             
@@ -66,7 +66,7 @@ struct SearchBarView: View {
             }
             .pickerStyle(.menu)
             .fixedSize()
-            .onChange(of: selectedBlacklist) { oldValue, newValue in
+            .onChange(of: selectedBlacklist) { _, _ in
                 onSearch()
             }
             
@@ -130,4 +130,3 @@ struct SearchBarView: View {
         }
     }
 }
-

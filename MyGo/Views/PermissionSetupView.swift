@@ -119,7 +119,7 @@ struct PermissionSetupView: View {
             checkTimer?.invalidate()
             checkTimer = nil
         }
-        .onChange(of: hasPermission) { oldValue, newValue in
+        .onChange(of: hasPermission) { _, newValue in
             if newValue {
                 // 停止定时器
                 checkTimer?.invalidate()
@@ -171,4 +171,3 @@ struct StepView: View {
         }
     }
 }
-

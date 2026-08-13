@@ -37,8 +37,6 @@ struct SettingsView: View {
             }
             .padding()
             
-            Divider()
-            
             // 内容区域
             TabView {
                 IndexSettingsView(indexManager: indexManager)
@@ -59,6 +57,7 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: 700, height: 600)
+        .background(Color(NSColor.textBackgroundColor))
     }
 }
 
@@ -145,6 +144,7 @@ struct IndexSettingsView: View {
                     }
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
             
             Divider()
@@ -186,6 +186,9 @@ struct IndexSettingsView: View {
     /// 删除目录
     private func removeDirectory(_ path: String) {
         DatabaseManager.shared.removeIndexDirectory(path: path)
+        // 删除该目录下已索引的文件记录，并重启文件监控
+        DatabaseManager.shared.removeFilesOutsideIndexedDirectories()
+        indexManager.restartFileSystemWatcher()
         loadDirectories()
     }
 }
@@ -308,6 +311,7 @@ struct PathKeywordSettingsView: View {
                         }
                     }
                     .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -362,6 +366,7 @@ struct PathKeywordSettingsView: View {
                         }
                     }
                     .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -617,7 +622,7 @@ struct LogSettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle("启用日志", isOn: $logEnabled)
                         .font(.headline)
-                        .onChange(of: logEnabled) { oldValue, newValue in
+                        .onChange(of: logEnabled) { _, newValue in
                             PreferencesManager.shared.saveLogEnabled(newValue)
                         }
                     
@@ -640,7 +645,7 @@ struct LogSettingsView: View {
                     }
                     .pickerStyle(.segmented)
                     .disabled(!logEnabled)
-                    .onChange(of: logLevel) { oldValue, newValue in
+                    .onChange(of: logLevel) { _, newValue in
                         PreferencesManager.shared.saveLogLevel(newValue)
                     }
                     
@@ -678,7 +683,7 @@ struct LogSettingsView: View {
                 }
                 .padding()
                 .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(8)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .padding()
             
@@ -717,4 +722,3 @@ struct LogSettingsView: View {
         NSWorkspace.shared.open(url)
     }
 }
-

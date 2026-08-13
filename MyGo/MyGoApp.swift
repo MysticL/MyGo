@@ -18,7 +18,21 @@ struct MyGoApp: App {
     init() {
         let startTime = Date()
         Logger.shared.log("=== 应用启动开始 ===", level: .debug)
-        // 快捷键功能暂时移除，后续再开发
+        
+        // 设置全局快捷键回调
+        HotKeyManager.shared.onHotKeyPressed = {
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+                // 获取当前活动窗口
+                if let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey }) {
+                    window.makeKeyAndOrderFront(nil)
+                } else {
+                    // 如果没有可见窗口，尝试重新打开主窗口（SwiftUI App 生命周期通常会自动处理）
+                    // 但对于 WindowGroup，通常只要激活应用就会显示
+                }
+            }
+        }
+        
         let elapsed = Date().timeIntervalSince(startTime)
         Logger.shared.log("MyGoApp init 完成，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
     }

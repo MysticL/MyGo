@@ -343,12 +343,14 @@ class DatabaseManager {
                     }
                 } else {
                     // 通配符和普通搜索
+                    // 顺序很重要：先转义用户输入的字面量 % 和 _，再把 * 和 ? 转成 SQL 通配符
+                    // % 和 _，否则会误把刚生成的通配符也转义掉。
                     let pattern = term
                         .replacingOccurrences(of: ".", with: "\\.")
-                        .replacingOccurrences(of: "*", with: "%")
-                        .replacingOccurrences(of: "?", with: "_")
                         .replacingOccurrences(of: "%", with: "\\%")
                         .replacingOccurrences(of: "_", with: "\\_")
+                        .replacingOccurrences(of: "*", with: "%")
+                        .replacingOccurrences(of: "?", with: "_")
                     
                     if parsedQuery.matchPath {
                         // 如果使用 path: 修饰符，搜索文件名和路径
@@ -395,13 +397,23 @@ class DatabaseManager {
                 parameters.append(String(maxSize))
             }
             
+            let dateColumn: String
+            switch filter.dateType {
+            case .created:
+                dateColumn = "created_date"
+            case .modified:
+                dateColumn = "modified_date"
+            case .accessed:
+                dateColumn = "accessed_date"
+            }
+
             if let minDate = filter.minDate {
-                conditions.append("modified_date >= ?")
+                conditions.append("\(dateColumn) >= ?")
                 parameters.append(String(minDate.timeIntervalSince1970))
             }
             
             if let maxDate = filter.maxDate {
-                conditions.append("modified_date <= ?")
+                conditions.append("\(dateColumn) <= ?")
                 parameters.append(String(maxDate.timeIntervalSince1970))
             }
         }
@@ -435,69 +447,56 @@ class DatabaseManager {
         }
         sqlite3_finalize(statement)
         
-        // 处理 NOT 操作符和正则表达式
-        if !parsedQuery.searchTerms.isEmpty {
-            // 处理 NOT 操作符
-            var notTerms: [String] = []
-            var termIndex = 0
-            for (_, op) in parsedQuery.operators.enumerated() {
-                if op == .not {
-                    if termIndex < parsedQuery.searchTerms.count {
-                        notTerms.append(parsedQuery.searchTerms[termIndex])
-                    }
-                }
-                if op != .not {
-                    termIndex += 1
-                }
-            }
-            
-            // 过滤掉 NOT 项
-            if !notTerms.isEmpty {
-                results = results.filter { item in
-                    for notTerm in notTerms {
-                        let searchText = parsedQuery.matchPath ? item.path : item.name
-                        if parsedQuery.caseSensitive {
-                            if searchText.contains(notTerm) {
-                                return false
-                            }
-                        } else {
-                            if searchText.localizedCaseInsensitiveContains(notTerm) {
-                                return false
-                            }
+        // 过滤掉 NOT 词条（排除包含 NOT 关键词的结果）
+        if !parsedQuery.notTerms.isEmpty {
+            results = results.filter { item in
+                let searchText = parsedQuery.matchPath ? item.path : item.name
+                for notTerm in parsedQuery.notTerms {
+                    if parsedQuery.caseSensitive {
+                        if searchText.contains(notTerm) {
+                            return false
                         }
-                    }
-                    return true
-                }
-            }
-            
-            // 如果使用正则表达式，在内存中进一步过滤
-            if parsedQuery.useRegex {
-                for term in parsedQuery.searchTerms {
-                    if let regex = try? NSRegularExpression(
-                        pattern: term,
-                        options: parsedQuery.caseSensitive ? [] : [.caseInsensitive]
-                    ) {
-                        results = results.filter { item in
-                            let searchText = parsedQuery.matchPath ? item.path : item.name
-                            let range = NSRange(searchText.startIndex..., in: searchText)
-                            return regex.firstMatch(in: searchText, range: range) != nil
-                        }
-                    }
-                }
-            } else if parsedQuery.caseSensitive {
-                // 大小写敏感搜索
-                results = results.filter { item in
-                    for term in parsedQuery.searchTerms {
-                        let searchText = parsedQuery.matchPath ? item.path : item.name
-                        if !searchText.contains(term) {
+                    } else {
+                        if searchText.localizedCaseInsensitiveContains(notTerm) {
                             return false
                         }
                     }
-                    return true
                 }
+                return true
             }
         }
-        
+
+        // 正则或大小写敏感时，在内存中对正向词条做精确匹配
+        if (parsedQuery.useRegex || parsedQuery.caseSensitive) && !parsedQuery.searchTerms.isEmpty {
+            let usesOr = parsedQuery.operators.contains(.or)
+            let regexes: [NSRegularExpression?] = parsedQuery.useRegex
+                ? parsedQuery.searchTerms.map {
+                    try? NSRegularExpression(
+                        pattern: $0,
+                        options: parsedQuery.caseSensitive ? [] : [.caseInsensitive]
+                    )
+                }
+                : []
+
+            results = results.filter { item in
+                let searchText = parsedQuery.matchPath ? item.path : item.name
+
+                let matches: [Bool] = parsedQuery.searchTerms.enumerated().map { index, term in
+                    if parsedQuery.useRegex {
+                        guard let regex = regexes[index] else {
+                            return false
+                        }
+                        let range = NSRange(searchText.startIndex..., in: searchText)
+                        return regex.firstMatch(in: searchText, range: range) != nil
+                    }
+
+                    return searchText.contains(term)
+                }
+
+                return usesOr ? matches.contains(true) : matches.allSatisfy { $0 }
+            }
+        }
+
         // 应用路径关键词筛选（白名单和黑名单）
         if let whitelist = whitelist, !whitelist.keywords.isEmpty {
             results = results.filter { item in
@@ -665,6 +664,79 @@ class DatabaseManager {
         }
     }
     
+    /// 移除不在任何启用索引目录下的文件记录。
+    /// 用于：删除索引目录后、或重新索引后，清理已不属于任何索引目录的残留文件。
+    func removeFilesOutsideIndexedDirectories() {
+        dbQueue.sync { [weak self] in
+            guard let self = self else { return }
+
+            // 1. 获取所有启用的索引目录
+            var directories: [String] = []
+            let dirSQL = "SELECT path FROM index_directories WHERE enabled = 1;"
+            var dirStmt: OpaquePointer?
+            if sqlite3_prepare_v2(self.db, dirSQL, -1, &dirStmt, nil) == SQLITE_OK {
+                while sqlite3_step(dirStmt) == SQLITE_ROW {
+                    if let cString = sqlite3_column_text(dirStmt, 0) {
+                        directories.append(String(cString: cString))
+                    }
+                }
+            }
+            sqlite3_finalize(dirStmt)
+
+            // 2. 获取所有文件路径
+            var allPaths: [String] = []
+            let fileSQL = "SELECT path FROM file_index;"
+            var fileStmt: OpaquePointer?
+            if sqlite3_prepare_v2(self.db, fileSQL, -1, &fileStmt, nil) == SQLITE_OK {
+                while sqlite3_step(fileStmt) == SQLITE_ROW {
+                    if let cString = sqlite3_column_text(fileStmt, 0) {
+                        allPaths.append(String(cString: cString))
+                    }
+                }
+            }
+            sqlite3_finalize(fileStmt)
+
+            // 3. 判断每个文件是否仍在某个索引目录下
+            func isUnderAnyDirectory(_ path: String) -> Bool {
+                for dir in directories {
+                    if path == dir { return true }
+                    if dir == "/" { return true } // 根目录包含所有绝对路径
+                    let prefix = dir.hasSuffix("/") ? dir : dir + "/"
+                    if path.hasPrefix(prefix) { return true }
+                }
+                return false
+            }
+
+            let toDelete = directories.isEmpty ? allPaths : allPaths.filter { !isUnderAnyDirectory($0) }
+            guard !toDelete.isEmpty else { return }
+
+            // 4. 批量删除（事务）
+            let deleteSQL = "DELETE FROM file_index WHERE path = ?;"
+            var deleteStmt: OpaquePointer?
+            guard sqlite3_prepare_v2(self.db, deleteSQL, -1, &deleteStmt, nil) == SQLITE_OK else {
+                Logger.shared.log("准备删除语句失败", level: .error)
+                return
+            }
+
+            sqlite3_exec(self.db, "BEGIN TRANSACTION", nil, nil, nil)
+            for path in toDelete {
+                sqlite3_reset(deleteStmt)
+                sqlite3_bind_text(deleteStmt, 1, (path as NSString).utf8String, -1, nil)
+                if sqlite3_step(deleteStmt) != SQLITE_DONE {
+                    if let err = sqlite3_errmsg(self.db) {
+                        Logger.shared.log("删除文件索引失败: \(path) - \(String(cString: err))", level: .error)
+                    }
+                }
+            }
+            sqlite3_finalize(deleteStmt)
+            if sqlite3_exec(self.db, "COMMIT", nil, nil, nil) != SQLITE_OK {
+                Logger.shared.log("提交清理事务失败", level: .error)
+            }
+
+            Logger.shared.log("已清理 \(toDelete.count) 条不在索引目录下的文件记录", level: .info)
+        }
+    }
+
     deinit {
         // 等待所有数据库操作完成后再关闭
         dbQueue.sync { [weak self] in
@@ -673,4 +745,3 @@ class DatabaseManager {
         }
     }
 }
-

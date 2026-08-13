@@ -182,6 +182,22 @@ class FileOperationService {
         pasteboard.clearContents()
         pasteboard.setString(item.path, forType: .string)
     }
+
+    /// 在终端中打开（文件夹在其中打开，文件在其父目录打开）
+    func openInTerminal(_ item: FileItem) {
+        let directory = item.isDirectory ? item.url : item.url.deletingLastPathComponent()
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-a", "Terminal", directory.path]
+
+        do {
+            try process.run()
+            Logger.shared.log("在终端中打开: \(directory.path)", level: .info)
+        } catch {
+            Logger.shared.log("在终端中打开失败: \(error.localizedDescription)", level: .error)
+        }
+    }
     
     /// 复制文件
     func copyFile(_ item: FileItem, to destination: URL) throws {

@@ -14,9 +14,6 @@ class PreferencesManager {
 
     private let windowWidthKey = "com.mygo.windowWidth"
     private let windowHeightKey = "com.mygo.windowHeight"
-    private let columnWidthsKey = "com.mygo.columnWidths"
-    private let columnWidthsVersionKey = "com.mygo.columnWidthsVersion"
-    private let currentColumnWidthsVersion = 5  // 版本5：强制重置列宽，确保名称列400px正确应用
     private let pathWhitelistsKey = "com.mygo.pathWhitelists"
     private let pathBlacklistsKey = "com.mygo.pathBlacklists"
     private let selectedWhitelistIdKey = "com.mygo.selectedWhitelistId"
@@ -44,39 +41,6 @@ class PreferencesManager {
         }
         
         return (width, height)
-    }
-    
-    /// 保存列宽
-    func saveColumnWidths(_ widths: [String: CGFloat]) {
-        let dict = widths.mapValues { $0 }
-        UserDefaults.standard.set(dict, forKey: columnWidthsKey)
-        Logger.shared.log("列宽已保存: \(widths.map { "\($0.key)=\(String(format: "%.1f", $0.value))" }.joined(separator: ", "))", level: .info)
-    }
-    
-    /// 获取列宽
-    func getColumnWidths() -> [String: CGFloat] {
-        let savedVersion = UserDefaults.standard.integer(forKey: columnWidthsVersionKey)
-
-        // 如果版本不匹配，重置列宽设置
-        if savedVersion != currentColumnWidthsVersion {
-            Logger.shared.log("列宽版本不匹配 (保存版本: \(savedVersion), 当前版本: \(currentColumnWidthsVersion))，重置列宽设置", level: .info)
-            resetColumnWidths()
-            UserDefaults.standard.set(currentColumnWidthsVersion, forKey: columnWidthsVersionKey)
-            return [:]  // 返回空字典，让调用方使用默认值
-        }
-
-        guard let dict = UserDefaults.standard.dictionary(forKey: columnWidthsKey) as? [String: Double] else {
-            Logger.shared.log("列宽读取: 未找到保存的列宽设置，返回空字典", level: .info)
-            return [:]
-        }
-        let widths = dict.mapValues { CGFloat($0) }
-        Logger.shared.log("列宽已读取: \(widths.map { "\($0.key)=\(String(format: "%.1f", $0.value))" }.joined(separator: ", "))", level: .info)
-        return widths
-    }
-
-    /// 重置列宽设置（恢复默认值）
-    func resetColumnWidths() {
-        UserDefaults.standard.removeObject(forKey: columnWidthsKey)
     }
     
     // MARK: - 路径关键词列表管理

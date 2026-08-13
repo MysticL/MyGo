@@ -16,6 +16,8 @@ class SearchService: ObservableObject {
     private let maxHistoryCount = 50
     private let historyKey = "com.mygo.searchHistory"
     private let databaseManager = DatabaseManager.shared
+    /// 搜索代次，用于丢弃过期（乱序返回）的搜索结果
+    private var searchGeneration = 0
     
     init() {
         let startTime = Date()
@@ -29,13 +31,14 @@ class SearchService: ObservableObject {
     func search(query: String, filter: SearchFilter? = nil, useRegex: Bool = false, whitelist: PathKeywordList? = nil, blacklist: PathKeywordList? = nil) {
         guard !query.isEmpty else {
             Logger.shared.log("搜索行为: 查询为空，清空结果", level: .info)
+            searchGeneration += 1  // 使进行中的旧搜索失效
             searchResults = []
             return
         }
-        
+
         // 解析搜索查询
         var parsed = SearchQueryParser.parse(query)
-        
+
         // 应用筛选器中的修饰符选项（优先级高于搜索框中的设置）
         if let filter = filter {
             parsed.fileOnly = filter.fileOnly
@@ -55,7 +58,7 @@ class SearchService: ObservableObject {
                 parsed.modifiers.useRegex = true
             }
         }
-        
+
         // 构建搜索参数日志
         var searchParams: [String] = ["查询: \"\(query)\""]
         if let filter = filter {
@@ -68,13 +71,23 @@ class SearchService: ObservableObject {
             searchParams.append("黑名单: \(blacklist.name)")
         }
         Logger.shared.log("搜索行为: \(searchParams.joined(separator: ", "))", level: .info)
-        
-        // 从数据库搜索
-        let results = databaseManager.searchFiles(parsedQuery: parsed, filter: filter, whitelist: whitelist, blacklist: blacklist)
-        searchResults = results
-        
-        Logger.shared.log("搜索行为: 找到 \(results.count) 个结果", level: .info)
-        
+
+        // 后台执行数据库搜索，避免阻塞主线程
+        searchGeneration += 1
+        let generation = searchGeneration
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let results = self.databaseManager.searchFiles(parsedQuery: parsed, filter: filter, whitelist: whitelist, blacklist: blacklist)
+            Logger.shared.log("搜索行为: 找到 \(results.count) 个结果", level: .info)
+
+            DispatchQueue.main.async {
+                // 只应用最新一次搜索的结果，丢弃过期结果
+                guard generation == self.searchGeneration else { return }
+                self.searchResults = results
+            }
+        }
+
         // 保存搜索历史
         if !query.isEmpty {
             addToHistory(query)

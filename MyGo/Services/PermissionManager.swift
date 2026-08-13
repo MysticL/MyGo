@@ -35,21 +35,24 @@ class PermissionManager {
     
     /// 检查完全磁盘访问权限（通过访问受保护的系统目录）
     func checkFullDiskAccessPermission() -> Bool {
-        // 尝试访问受保护的系统目录来测试完全磁盘访问权限
-        // 这些目录需要完全磁盘访问权限才能访问
-        let protectedPaths = [
-            "/Library/Application Support",
-            "/System/Library"
+        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+        let protectedURLs = [
+            homeDirectory.appendingPathComponent("Library/Mail"),
+            homeDirectory.appendingPathComponent("Library/Messages"),
+            homeDirectory.appendingPathComponent("Library/Safari")
         ]
-        
-        for path in protectedPaths {
-            // 检查是否可以访问（不仅仅是可读，还要能打开）
-            if !FileManager.default.isReadableFile(atPath: path) {
-                return false
+
+        for url in protectedURLs where FileManager.default.fileExists(atPath: url.path) {
+            do {
+                _ = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+                return true
+            } catch {
+                continue
             }
         }
         
-        return true
+        // 如果当前机器上没有这些受 TCC 保护的目录，则保守返回 false，避免误判已授权。
+        return false
     }
     
     /// 检查是否有权限打开指定文件
@@ -97,4 +100,3 @@ class PermissionManager {
         }
     }
 }
-

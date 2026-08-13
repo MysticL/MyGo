@@ -38,19 +38,19 @@ struct ContentView: View {
                     }
                 )
                 .padding()
-                .onChange(of: searchText) { oldValue, newValue in
+                .onChange(of: searchText) { _, _ in
                     // 防抖：延迟搜索，避免输入时卡顿
                     searchDebounceTimer?.invalidate()
                     searchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
                         performSearch()
                     }
                 }
-                .onChange(of: selectedWhitelist) { oldValue, newValue in
+                .onChange(of: selectedWhitelist) { _, newValue in
                     // 保存选中的白名单ID
                     PreferencesManager.shared.saveSelectedWhitelistId(newValue?.id)
                     performSearchImmediately()
                 }
-                .onChange(of: selectedBlacklist) { oldValue, newValue in
+                .onChange(of: selectedBlacklist) { _, newValue in
                     // 保存选中的黑名单ID
                     PreferencesManager.shared.saveSelectedBlacklistId(newValue?.id)
                     performSearchImmediately()
@@ -69,7 +69,7 @@ struct ContentView: View {
             // 右侧筛选面板（弹窗）
             if showFilter {
                 FilterView(filter: $filter, isPresented: $showFilter)
-                    .onChange(of: filter) { oldValue, newValue in
+                    .onChange(of: filter) { _, newValue in
                         // 保存筛选器设置
                         PreferencesManager.shared.saveSearchFilter(newValue)
                         performSearchImmediately()
@@ -82,7 +82,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 800, minHeight: 600)
         .background(WindowSizeTracker())
-        .onChange(of: appState.showSettings) {
+        .onChange(of: appState.showSettings) { _, _ in
             // 当设置窗口关闭时保存窗口大小
             saveWindowSize()
         }
@@ -211,6 +211,18 @@ struct ContentView: View {
                     }
                 }
             }
+        case .copyTo:
+            FileOperationService.shared.showCopyDialog(for: item) { destination in
+                if let destination = destination {
+                    do {
+                        try FileOperationService.shared.copyFile(item, to: destination.appendingPathComponent(item.name))
+                    } catch {
+                        print("复制文件失败: \(error)")
+                    }
+                }
+            }
+        case .openInTerminal:
+            FileOperationService.shared.openInTerminal(item)
         case .delete:
             do {
                 try FileOperationService.shared.deleteFile(item)

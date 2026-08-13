@@ -47,15 +47,26 @@ class HotKeyManager {
         return id
     }()
     private var eventHandler: EventHandlerRef?
+    private var eventHandlerUPP: EventHandlerUPP?
     
     var onHotKeyPressed: (() -> Void)?
     
+    // 默认快捷键：Cmd+Ctrl+F
+    // 'f' 的键码是 3
+    private let defaultKeyCode: UInt32 = 3
+    private let defaultModifiers: UInt32 = UInt32(cmdKey | controlKey)
+    
     private init() {
         setupEventHandler()
+        // 注册默认快捷键
+        _ = registerHotKey(keyCode: defaultKeyCode, modifiers: defaultModifiers)
     }
     
     deinit {
         unregisterHotKey()
+        if let eventHandler {
+            RemoveEventHandler(eventHandler)
+        }
     }
     
     /// 设置事件处理器
@@ -63,9 +74,11 @@ class HotKeyManager {
         var eventSpec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: OSType(kEventHotKeyPressed))
         
         let userData = Unmanaged.passUnretained(self).toOpaque()
-        // 直接使用函数指针
-        let eventHandlerUPP = NewEventHandlerUPP(hotKeyEventHandler)
-        InstallEventHandler(GetApplicationEventTarget(), eventHandlerUPP, 1, &eventSpec, userData, &eventHandler)
+        // 在 64-bit macOS 上直接保存函数指针，避免链接到不可用的 UPP 符号。
+        eventHandlerUPP = hotKeyEventHandler
+        if let eventHandlerUPP {
+            InstallEventHandler(GetApplicationEventTarget(), eventHandlerUPP, 1, &eventSpec, userData, &eventHandler)
+        }
     }
     
     /// 注册快捷键
@@ -173,4 +186,3 @@ class HotKeyManager {
         return parts.joined()
     }
 }
-
