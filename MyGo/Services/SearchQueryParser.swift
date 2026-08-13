@@ -12,6 +12,7 @@ struct SearchQueryParser {
     /// 解析后的搜索条件
     struct ParsedQuery {
         var searchTerms: [String] = []
+        var notTerms: [String] = []   // NOT 词条（! 前缀），用于排除
         var operators: [SearchOperator] = []
         var modifiers: SearchModifiers = SearchModifiers()
         var pathConstraints: [String] = []
@@ -49,54 +50,48 @@ struct SearchQueryParser {
         // 解析路径约束
         parsed = parsePathConstraints(&currentQuery, into: parsed)
         
-        // 解析引号内的词组
+        // 解析引号内的词组与操作符（空格=AND、|=OR、!=NOT）
         var terms: [String] = []
+        var notTerms: [String] = []
         var operators: [SearchOperator] = []
         var inQuotes = false
         var currentTerm = ""
+        var isNegated = false
         var i = currentQuery.startIndex
-        
+
+        // 将当前积累的词条按其否定标记归入 terms 或 notTerms
+        func flushTerm() {
+            let trimmed = currentTerm.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty {
+                if isNegated {
+                    notTerms.append(trimmed)
+                } else {
+                    terms.append(trimmed)
+                }
+                isNegated = false
+            }
+            currentTerm = ""
+        }
+
         while i < currentQuery.endIndex {
             let char = currentQuery[i]
-            
+
             if char == "\"" {
-                if inQuotes {
-                    // 结束引号
-                    if !currentTerm.isEmpty {
-                        terms.append(currentTerm)
-                        currentTerm = ""
-                    }
-                    inQuotes = false
-                } else {
-                    // 开始引号
-                    if !currentTerm.isEmpty {
-                        terms.append(currentTerm)
-                        currentTerm = ""
-                    }
-                    inQuotes = true
-                }
+                // 引号作为词组分隔符
+                flushTerm()
+                inQuotes.toggle()
             } else if !inQuotes {
-                // 解析操作符
                 if char == "|" {
-                    if !currentTerm.isEmpty {
-                        terms.append(currentTerm.trimmingCharacters(in: .whitespaces))
-                        currentTerm = ""
-                    }
+                    flushTerm()
                     operators.append(.or)
                 } else if char == "!" && (i == currentQuery.startIndex || currentQuery[currentQuery.index(before: i)].isWhitespace) {
                     // NOT 操作符（前面是空格或开头）
-                    if !currentTerm.isEmpty {
-                        terms.append(currentTerm.trimmingCharacters(in: .whitespaces))
-                        currentTerm = ""
-                    }
-                    operators.append(.not)
+                    flushTerm()
+                    isNegated = true
                 } else if char.isWhitespace {
                     // 空格表示 AND
-                    if !currentTerm.isEmpty {
-                        terms.append(currentTerm.trimmingCharacters(in: .whitespaces))
-                        currentTerm = ""
-                        operators.append(.and)
-                    }
+                    flushTerm()
+                    operators.append(.and)
                 } else {
                     currentTerm.append(char)
                 }
@@ -104,19 +99,17 @@ struct SearchQueryParser {
                 // 引号内的内容
                 currentTerm.append(char)
             }
-            
+
             i = currentQuery.index(after: i)
         }
-        
+
         // 添加最后一个词
-        if !currentTerm.isEmpty {
-            terms.append(currentTerm.trimmingCharacters(in: .whitespaces))
-        }
-        
-        // 清理空词
-        parsed.searchTerms = terms.filter { !$0.isEmpty }
+        flushTerm()
+
+        parsed.searchTerms = terms
+        parsed.notTerms = notTerms
         parsed.operators = operators
-        
+
         return parsed
     }
     

@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import CoreServices
 
 /// 文件索引管理器
 class FileIndexManager: ObservableObject {
@@ -86,7 +87,10 @@ class FileIndexManager: ObservableObject {
         
         // 清理已删除的文件
         databaseManager.cleanupDeletedFiles()
-        
+
+        // 清理不在任何启用索引目录下的文件（目录被移除后残留的记录）
+        databaseManager.removeFilesOutsideIndexedDirectories()
+
         // 启动文件系统监控
         startFileSystemWatcher()
     }
@@ -194,10 +198,18 @@ class FileIndexManager: ObservableObject {
     
     /// 启动文件系统监控
     private func startFileSystemWatcher() {
+        fileSystemWatcher?.stop()
         fileSystemWatcher = FileSystemWatcher { [weak self] url, event in
             self?.handleFileSystemEvent(url: url, event: event)
         }
         fileSystemWatcher?.start()
+    }
+
+    /// 重启文件系统监控（索引目录变化后调用）
+    func restartFileSystemWatcher() {
+        fileSystemWatcher?.stop()
+        fileSystemWatcher = nil
+        startFileSystemWatcher()
     }
     
     /// 处理文件系统事件
@@ -230,35 +242,98 @@ enum FileSystemEvent {
     case renamed
 }
 
-/// 文件系统监控器（简化版 - 使用定时刷新）
+/// 文件系统监控器（使用 FSEvents 实时监控文件变化）
 class FileSystemWatcher {
-    private var timer: Timer?
+    private var stream: FSEventStreamRef?
     private let callback: (URL, FileSystemEvent) -> Void
-    private var lastCheckTime: Date = Date()
-    
+    private let queue = DispatchQueue(label: "com.mygo.fsevents", qos: .utility)
+
     init(callback: @escaping (URL, FileSystemEvent) -> Void) {
         self.callback = callback
     }
-    
+
+    deinit {
+        stop()
+    }
+
     func start() {
-        guard timer == nil else { return }
-        
-        // 每5秒检查一次文件系统变化
-        timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            self?.checkForChanges()
+        stop()
+
+        let paths = DatabaseManager.shared.getIndexDirectories()
+        guard !paths.isEmpty else {
+            Logger.shared.log("没有索引目录，跳过文件系统监控", level: .debug)
+            return
         }
-        RunLoop.current.add(timer!, forMode: .common)
+
+        var context = FSEventStreamContext(
+            version: 0,
+            info: Unmanaged.passUnretained(self).toOpaque(),
+            retain: nil,
+            release: nil,
+            copyDescription: nil
+        )
+
+        let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents)
+            | FSEventStreamCreateFlags(kFSEventStreamCreateFlagNoDefer)
+
+        guard let stream = FSEventStreamCreate(
+            kCFAllocatorDefault,
+            { (_, info, numEvents, eventPaths, eventFlags, _) in
+                guard let info = info else { return }
+                let watcher = Unmanaged<FileSystemWatcher>.fromOpaque(info).takeUnretainedValue()
+                let pathPointers = eventPaths.assumingMemoryBound(to: UnsafePointer<CChar>?.self)
+                for i in 0..<numEvents {
+                    guard let cString = pathPointers[i] else { continue }
+                    let path = String(cString: cString)
+                    let url = URL(fileURLWithPath: path)
+                    watcher.handleEvent(url: url, flags: eventFlags[i])
+                }
+            },
+            &context,
+            paths as CFArray,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+            0.5,
+            flags
+        ) else {
+            Logger.shared.log("创建 FSEventStream 失败", level: .error)
+            return
+        }
+
+        self.stream = stream
+        FSEventStreamSetDispatchQueue(stream, queue)
+        FSEventStreamStart(stream)
+        Logger.shared.log("文件系统监控已启动，监控 \(paths.count) 个目录", level: .info)
     }
-    
+
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        guard let stream = stream else { return }
+        FSEventStreamStop(stream)
+        FSEventStreamInvalidate(stream)
+        FSEventStreamRelease(stream)
+        self.stream = nil
     }
-    
-    private func checkForChanges() {
-        // 这是一个简化实现，实际应用中可以使用 FSEvents API
-        // 这里我们只记录检查时间，实际的文件变化检测由索引管理器在重新索引时处理
-        lastCheckTime = Date()
+
+    private func handleEvent(url: URL, flags: FSEventStreamEventFlags) {
+        // 忽略隐藏文件（如 .DS_Store）
+        if url.lastPathComponent.hasPrefix(".") {
+            return
+        }
+
+        var event: FileSystemEvent?
+        if flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated) != 0 {
+            event = .created
+        } else if flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved) != 0 {
+            event = .deleted
+        } else if flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRenamed) != 0 {
+            event = .renamed
+        } else if flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified) != 0
+                    || flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemInodeMetaMod) != 0 {
+            event = .modified
+        }
+
+        if let event = event {
+            callback(url, event)
+        }
     }
 }
 

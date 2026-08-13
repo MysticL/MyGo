@@ -9,7 +9,6 @@ import Foundation
 
 /// 文件项模型
 struct FileItem: Identifiable, Hashable {
-    let id: UUID
     let url: URL
     let name: String
     let path: String
@@ -19,9 +18,11 @@ struct FileItem: Identifiable, Hashable {
     let modifiedDate: Date?
     let accessedDate: Date?
     let fileExtension: String?
-    
+
+    /// 以路径作为稳定唯一标识，避免每次构造都生成新 UUID 导致选中态/diffing 失效
+    var id: String { path }
+
     nonisolated init(url: URL) {
-        self.id = UUID()
         self.url = url
         self.name = url.lastPathComponent
         self.path = url.path
