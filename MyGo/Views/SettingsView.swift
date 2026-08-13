@@ -9,156 +9,106 @@ import SwiftUI
 import AppKit
 
 struct SettingsView: View {
-    @Environment(\.dismiss) var dismiss
     @ObservedObject var indexManager: FileIndexManager
-    
+
     init(indexManager: FileIndexManager = FileIndexManager()) {
         self._indexManager = ObservedObject(wrappedValue: indexManager)
     }
-    
+
     var body: some View {
-        VStack(spacing: 0) {
-            // 标题栏
-            HStack {
-                Button(action: {
-                    dismiss()
-                }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
+        TabView {
+            IndexSettingsView(indexManager: indexManager)
+                .tabItem {
+                    Label("索引", systemImage: "folder")
                 }
-                .buttonStyle(.plain)
-                .help("关闭")
-                
-                Text("设置")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                Spacer()
-            }
-            .padding()
-            
-            // 内容区域
-            TabView {
-                IndexSettingsView(indexManager: indexManager)
-                    .tabItem {
-                        Label("索引设置", systemImage: "folder")
-                    }
-                
-                PathKeywordSettingsView()
-                    .tabItem {
-                        Label("路径关键词", systemImage: "list.bullet")
-                    }
-                
-                LogSettingsView()
-                    .tabItem {
-                        Label("日志", systemImage: "doc.text")
-                    }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            PathKeywordSettingsView()
+                .tabItem {
+                    Label("路径关键词", systemImage: "list.bullet")
+                }
+
+            LogSettingsView()
+                .tabItem {
+                    Label("日志", systemImage: "doc.text")
+                }
         }
-        .frame(width: 700, height: 600)
-        .background(Color(NSColor.textBackgroundColor))
+        .frame(width: 480, height: 380)
     }
 }
 
 struct IndexSettingsView: View {
     @State private var indexDirectories: [String] = []
     @State private var showAddDirectoryDialog = false
-    @State private var selectedDirectory: String?
     @ObservedObject var indexManager: FileIndexManager
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // 工具栏
-            HStack {
-                Spacer()
-                
-                Button(action: {
-                    showAddDirectoryDialog = true
-                }) {
-                    Image(systemName: "plus")
-                    Text("添加目录")
-                }
-                .buttonStyle(.borderedProminent)
-                
-                Button(action: {
-                    indexManager.startIndexing()
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                    Text("重新索引")
-                }
-                .buttonStyle(.bordered)
-                .disabled(indexManager.isIndexing)
-            }
-            .padding()
-            
-            Divider()
-            
-            // 索引目录列表
-            if indexDirectories.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "folder.badge.plus")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondary)
+        List {
+            Section {
+                if indexDirectories.isEmpty {
                     Text("还没有添加索引目录")
-                        .font(.headline)
                         .foregroundColor(.secondary)
-                    Text("点击右上角的\"添加目录\"按钮来添加需要索引的目录")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding()
-            } else {
-                List {
+                } else {
                     ForEach(indexDirectories, id: \.self) { directory in
                         HStack {
                             Image(systemName: "folder.fill")
                                 .foregroundColor(.blue)
-                            
-                            VStack(alignment: .leading, spacing: 4) {
+
+                            VStack(alignment: .leading, spacing: 2) {
                                 Text((directory as NSString).lastPathComponent)
-                                    .font(.headline)
                                 Text(directory)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
                             }
-                            
+
                             Spacer()
-                            
-                            Button(action: {
+
+                            Button {
                                 removeDirectory(directory)
-                            }) {
-                                Image(systemName: "trash")
+                            } label: {
+                                Image(systemName: "minus.circle")
                                     .foregroundColor(.red)
                             }
                             .buttonStyle(.plain)
-                        }
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            selectedDirectory = directory
+                            .help("移除")
                         }
                     }
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
+
+                Button {
+                    showAddDirectoryDialog = true
+                } label: {
+                    Label("添加目录…", systemImage: "plus")
+                }
+            } header: {
+                Text("索引目录")
             }
-            
-            Divider()
-            
-            // 统计信息
-            HStack {
-                Text("已索引文件数: \(DatabaseManager.shared.getIndexedFileCount())")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Spacer()
+
+            Section {
+                HStack(spacing: 12) {
+                    Button {
+                        indexManager.startIndexing()
+                    } label: {
+                        Label("重新索引", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(indexManager.isIndexing)
+
+                    if indexManager.isIndexing {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+            } header: {
+                Text("维护")
             }
-            .padding()
+
+            Section {
+                LabeledContent("已索引文件数", value: "\(DatabaseManager.shared.getIndexedFileCount())")
+            } header: {
+                Text("统计")
+            }
         }
+        .listStyle(.inset)
         .onAppear {
             loadDirectories()
         }
@@ -262,115 +212,74 @@ struct PathKeywordSettingsView: View {
     @State private var editingBlacklist: PathKeywordList?
     
     var body: some View {
-        HStack(spacing: 0) {
-            // 白名单设置
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Text("路径白名单")
-                        .font(.headline)
-                    Spacer()
-                    Button(action: {
-                        showAddWhitelistDialog = true
-                    }) {
-                        Image(systemName: "plus")
-                        Text("添加")
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .padding()
-                
-                Divider()
-                
+        List {
+            Section {
                 if whitelists.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "checkmark.circle")
-                            .font(.system(size: 48))
-                            .foregroundColor(.secondary)
-                        Text("还没有添加白名单")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                        Text("点击右上角的\"添加\"按钮来创建白名单")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding()
+                    Text("还没有添加白名单")
+                        .foregroundColor(.secondary)
                 } else {
-                    List {
-                        ForEach(whitelists) { list in
-                            PathKeywordListItemView(
-                                list: list,
-                                onEdit: {
-                                    editingWhitelist = list
-                                },
-                                onDelete: {
-                                    deleteWhitelist(list)
-                                }
-                            )
-                        }
+                    ForEach(whitelists) { list in
+                        PathKeywordListItemView(
+                            list: list,
+                            onEdit: {
+                                editingWhitelist = list
+                            },
+                            onDelete: {
+                                deleteWhitelist(list)
+                            }
+                        )
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
+                    .onMove { source, destination in
+                        moveWhitelist(from: source, to: destination)
+                    }
                 }
+
+                Button {
+                    showAddWhitelistDialog = true
+                } label: {
+                    Label("添加白名单…", systemImage: "plus")
+                }
+            } header: {
+                Text("路径白名单")
+            } footer: {
+                Text("路径必须包含列表中的全部关键词，可拖动调整顺序")
+                    .foregroundColor(.secondary)
             }
-            .frame(maxWidth: .infinity)
-            
-            Divider()
-            
-            // 黑名单设置
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Text("路径黑名单")
-                        .font(.headline)
-                    Spacer()
-                    Button(action: {
-                        showAddBlacklistDialog = true
-                    }) {
-                        Image(systemName: "plus")
-                        Text("添加")
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .padding()
-                
-                Divider()
-                
+
+            Section {
                 if blacklists.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "xmark.circle")
-                            .font(.system(size: 48))
-                            .foregroundColor(.secondary)
-                        Text("还没有添加黑名单")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                        Text("点击右上角的\"添加\"按钮来创建黑名单")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding()
+                    Text("还没有添加黑名单")
+                        .foregroundColor(.secondary)
                 } else {
-                    List {
-                        ForEach(blacklists) { list in
-                            PathKeywordListItemView(
-                                list: list,
-                                onEdit: {
-                                    editingBlacklist = list
-                                },
-                                onDelete: {
-                                    deleteBlacklist(list)
-                                }
-                            )
-                        }
+                    ForEach(blacklists) { list in
+                        PathKeywordListItemView(
+                            list: list,
+                            onEdit: {
+                                editingBlacklist = list
+                            },
+                            onDelete: {
+                                deleteBlacklist(list)
+                            }
+                        )
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
+                    .onMove { source, destination in
+                        moveBlacklist(from: source, to: destination)
+                    }
                 }
+
+                Button {
+                    showAddBlacklistDialog = true
+                } label: {
+                    Label("添加黑名单…", systemImage: "plus")
+                }
+            } header: {
+                Text("路径黑名单")
+            } footer: {
+                Text("路径不能包含列表中的任何关键词，可拖动调整顺序")
+                    .foregroundColor(.secondary)
             }
-            .frame(maxWidth: .infinity)
         }
+        .listStyle(.inset)
         .onAppear {
             loadLists()
         }
@@ -455,6 +364,18 @@ struct PathKeywordSettingsView: View {
     
     private func deleteBlacklist(_ list: PathKeywordList) {
         blacklists.removeAll { $0.id == list.id }
+        PreferencesManager.shared.savePathBlacklists(blacklists)
+        NotificationCenter.default.post(name: NSNotification.Name("PathKeywordListsUpdated"), object: nil)
+    }
+
+    private func moveWhitelist(from source: IndexSet, to destination: Int) {
+        whitelists.move(fromOffsets: source, toOffset: destination)
+        PreferencesManager.shared.savePathWhitelists(whitelists)
+        NotificationCenter.default.post(name: NSNotification.Name("PathKeywordListsUpdated"), object: nil)
+    }
+
+    private func moveBlacklist(from source: IndexSet, to destination: Int) {
+        blacklists.move(fromOffsets: source, toOffset: destination)
         PreferencesManager.shared.savePathBlacklists(blacklists)
         NotificationCenter.default.post(name: NSNotification.Name("PathKeywordListsUpdated"), object: nil)
     }
@@ -608,104 +529,70 @@ struct LogSettingsView: View {
     @State private var logLevel: LogLevel = .info
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("日志设置")
-                .font(.title2)
-                .fontWeight(.bold)
-                .padding()
-            
-            Divider()
-            
-            // 日志开关和日志等级（并排显示）
-            HStack(alignment: .top, spacing: 20) {
-                // 日志开关
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle("启用日志", isOn: $logEnabled)
-                        .font(.headline)
-                        .onChange(of: logEnabled) { _, newValue in
-                            PreferencesManager.shared.saveLogEnabled(newValue)
-                        }
-                    
-                    Text("启用后，应用会记录运行信息到日志文件。")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                
-                // 日志等级
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("日志等级")
-                        .font(.headline)
-                    
-                    Picker("", selection: $logLevel) {
-                        Text("调试 (DEBUG)").tag(LogLevel.debug)
-                        Text("信息 (INFO)").tag(LogLevel.info)
-                        Text("警告 (WARNING)").tag(LogLevel.warning)
-                        Text("错误 (ERROR)").tag(LogLevel.error)
+        Form {
+            Section {
+                Toggle("启用日志", isOn: $logEnabled)
+                    .onChange(of: logEnabled) { _, newValue in
+                        PreferencesManager.shared.saveLogEnabled(newValue)
                     }
-                    .pickerStyle(.segmented)
-                    .disabled(!logEnabled)
-                    .onChange(of: logLevel) { _, newValue in
-                        PreferencesManager.shared.saveLogLevel(newValue)
-                    }
-                    
-                    Text("只记录所选等级及以上的日志。例如选择\"信息\"时，会记录信息、警告和错误日志。")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            } header: {
+                Text("日志")
+            } footer: {
+                Text("启用后，应用会记录运行信息到日志文件。")
+                    .foregroundColor(.secondary)
             }
-            .padding()
-            
-            Divider()
-            
-            // 日志文件位置
-            VStack(alignment: .leading, spacing: 12) {
-                Text("日志文件位置")
-                    .font(.headline)
-                
+
+            Section {
+                Picker("日志等级", selection: $logLevel) {
+                    Text("调试 (DEBUG)").tag(LogLevel.debug)
+                    Text("信息 (INFO)").tag(LogLevel.info)
+                    Text("警告 (WARNING)").tag(LogLevel.warning)
+                    Text("错误 (ERROR)").tag(LogLevel.error)
+                }
+                .pickerStyle(.menu)
+                .disabled(!logEnabled)
+                .onChange(of: logLevel) { _, newValue in
+                    PreferencesManager.shared.saveLogLevel(newValue)
+                }
+            } header: {
+                Text("日志等级")
+            } footer: {
+                Text("只记录所选等级及以上的日志。")
+                    .foregroundColor(.secondary)
+            }
+
+            Section {
                 HStack {
                     Text(logPath.isEmpty ? "加载中..." : logPath)
                         .font(.system(.body, design: .monospaced))
                         .foregroundColor(.secondary)
                         .textSelection(.enabled)
-                    
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
                     Spacer()
-                    
-                    Button(action: {
+                }
+
+                HStack(spacing: 12) {
+                    Button {
                         openLogFile()
-                    }) {
-                        Image(systemName: "folder")
-                        Text("打开日志文件")
+                    } label: {
+                        Label("打开日志文件", systemImage: "folder")
                     }
-                    .buttonStyle(.bordered)
+                    .disabled(!logEnabled)
+
+                    Button {
+                        Logger.shared.clearLog()
+                    } label: {
+                        Label("清空日志", systemImage: "trash")
+                    }
                     .disabled(!logEnabled)
                 }
-                .padding()
-                .background(Color(NSColor.controlBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+            } header: {
+                Text("日志文件")
             }
-            .padding()
-            
-            Divider()
-            
-            HStack {
-                Button(action: {
-                    Logger.shared.clearLog()
-                }) {
-                    Image(systemName: "trash")
-                    Text("清空日志")
-                }
-                .buttonStyle(.bordered)
-                .disabled(!logEnabled)
-                
-                Spacer()
-            }
-            .padding()
-            
-            Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .formStyle(.grouped)
         .onAppear {
             loadSettings()
         }

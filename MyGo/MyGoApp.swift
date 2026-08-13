@@ -12,7 +12,6 @@ import AppKit
 @main
 struct MyGoApp: App {
     @StateObject private var indexManager = FileIndexManager()
-    @StateObject private var appState = AppState()
     @StateObject private var permissionChecker = PermissionChecker()
     
     init() {
@@ -38,36 +37,21 @@ struct MyGoApp: App {
     }
     
     var body: some Scene {
-        let startTime = Date()
-        Logger.shared.log("MyGoApp body 开始构建", level: .debug)
-        
-        let windowSize = PreferencesManager.shared.getWindowSize()
-        Logger.shared.log("读取窗口大小: \(String(format: "%.0f", windowSize.width))x\(String(format: "%.0f", windowSize.height))", level: .debug)
-        
-        let elapsed = Date().timeIntervalSince(startTime)
-        Logger.shared.log("MyGoApp body 构建完成，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)
-        
-        return WindowGroup {
+        WindowGroup {
             RootView()
                 .environmentObject(indexManager)
-                .environmentObject(appState)
                 .environmentObject(permissionChecker)
         }
         .windowStyle(.automatic)
         .defaultSize(
-            width: permissionChecker.hasPermission ? windowSize.width : 600,
-            height: permissionChecker.hasPermission ? windowSize.height : 700
+            width: permissionChecker.hasPermission ? PreferencesManager.shared.getWindowSize().width : 600,
+            height: permissionChecker.hasPermission ? PreferencesManager.shared.getWindowSize().height : 700
         )
         .commands {
             CommandGroup(replacing: .newItem) {}
 
-            // 将设置和重新索引都移到应用菜单中
-            CommandGroup(replacing: .appSettings) {
-                Button("设置...") {
-                    appState.showSettings = true
-                }
-                .keyboardShortcut(",", modifiers: .command)
-
+            // 「设置…」由原生 Settings scene 自动提供，这里只保留「重新索引」
+            CommandGroup(after: .appSettings) {
                 Divider()
 
                 Button("重新索引") {
@@ -81,12 +65,11 @@ struct MyGoApp: App {
                 .disabled(indexManager.isIndexing)
             }
         }
-    }
-}
 
-/// 应用状态管理
-class AppState: ObservableObject {
-    @Published var showSettings = false
+        Settings {
+            SettingsView(indexManager: indexManager)
+        }
+    }
 }
 
 /// 权限检查器

@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+
+## [1.5.0] - 2026-08-13
+### Changed
+- 设置界面改为原生设置窗口，路径白名单/黑名单支持拖动排序
+## [1.4.0] - 2026-08-13
+### Changed
+- 搜索排序与筛选基于完整结果集（移除 10000 条上限，滚动到底部自动加载更多）
 ## [1.3.1] - 2026-08-13
 ### Changed
 - 修复列表行选中，双击改用 NSTableView doubleAction 处理

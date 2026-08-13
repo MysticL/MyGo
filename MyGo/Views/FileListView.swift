@@ -25,6 +25,8 @@ struct FileListView: View {
         KeyPathComparator(\FileItem.sortableModifiedDate)
     ]
     @State private var selectedFileID: String?
+    @State private var sortedCache: [FileItem] = []
+    @State private var visibleCount = 500
     var onFileAction: (FileItem, FileAction) -> Void
 
     enum FileAction {
@@ -37,13 +39,24 @@ struct FileListView: View {
         case delete
     }
 
-    var sortedFiles: [FileItem] {
-        files.sorted(using: sortOrder)
+    /// 排序指纹：SwiftUI 点击列头只会调整比较器顺序与方向，据此生成稳定字符串以触发缓存重算
+    private var sortToken: String {
+        sortOrder.map { $0.order == .forward ? "f" : "r" }.joined()
+    }
+
+    /// 当前显示的窗口（排序缓存的前 visibleCount 条）
+    private var visibleFiles: [FileItem] {
+        Array(sortedCache.prefix(visibleCount))
+    }
+
+    /// 重算排序缓存（只在数据或排序变化时调用，避免每次 body 重算都重排大数组）
+    private func recomputeSorted() {
+        sortedCache = files.sorted(using: sortOrder)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            Table(sortedFiles, selection: $selectedFileID, sortOrder: $sortOrder) {
+            Table(visibleFiles, selection: $selectedFileID, sortOrder: $sortOrder) {
                 // 名称列 - 可排序
                 TableColumn("名称", value: \.name) { file in
                     HStack(spacing: 6) {
@@ -117,24 +130,40 @@ struct FileListView: View {
             }
             .tableStyle(.inset(alternatesRowBackgrounds: true))
             // 双击打开走 NSTableView.doubleAction（AppKit 原生），不干扰单选；列宽走 autosave。
+            // onReachBottom 滚动到底部时自动加载更多（无限滚动）。
             .background(TableColumnAutosave(
-                files: sortedFiles,
-                onDoubleClick: { file in onFileAction(file, .open) }
+                files: visibleFiles,
+                onDoubleClick: { file in onFileAction(file, .open) },
+                onReachBottom: { visibleCount += 500 }
             ))
 
             Divider()
 
             // 底部状态栏
             HStack {
-                Text("\(files.count) 个结果")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                if visibleCount < sortedCache.count {
+                    Text("已显示 \(visibleCount) / \(files.count) 个结果")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("\(files.count) 个结果")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
 
                 Spacer()
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(Color(NSColor.controlBackgroundColor))
+        }
+        .onAppear { recomputeSorted() }
+        .onChange(of: files) { _, _ in
+            visibleCount = 500
+            recomputeSorted()
+        }
+        .onChange(of: sortToken) { _, _ in
+            recomputeSorted()
         }
     }
 
@@ -156,12 +185,14 @@ struct FileListView: View {
 /// 借助 NSTableView 的能力：
 /// - `doubleAction` 实现双击打开（AppKit 原生，不影响单选）
 /// - `autosaveName`/`autosaveTableColumns` 持久化列宽与列顺序
+/// - 监听滚动到底部，实现无限滚动（自动加载更多）
 private struct TableColumnAutosave: NSViewRepresentable {
     var files: [FileItem]
     var onDoubleClick: (FileItem) -> Void
+    var onReachBottom: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(files: files, onDoubleClick: onDoubleClick)
+        Coordinator(files: files, onDoubleClick: onDoubleClick, onReachBottom: onReachBottom)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -177,6 +208,7 @@ private struct TableColumnAutosave: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.files = files
         context.coordinator.onDoubleClick = onDoubleClick
+        context.coordinator.onReachBottom = onReachBottom
         DispatchQueue.main.async {
             Self.configure(nsView, context: context)
         }
@@ -189,6 +221,11 @@ private struct TableColumnAutosave: NSViewRepresentable {
         // 双击打开（AppKit 原生，不会吞掉单选）
         tableView.target = context.coordinator
         tableView.doubleAction = #selector(Coordinator.handleDoubleClick(_:))
+
+        // 滚动到底部自动加载更多（幂等挂接）
+        if let scrollView = tableView.enclosingScrollView {
+            context.coordinator.attachScrollObserver(to: scrollView)
+        }
 
         // 列宽/列顺序持久化（幂等，避免每次更新重复触发 autosave 恢复）
         if tableView.autosaveName == "MyGoFileListTable" && tableView.autosaveTableColumns {
@@ -216,10 +253,49 @@ private struct TableColumnAutosave: NSViewRepresentable {
     final class Coordinator: NSObject {
         var files: [FileItem]
         var onDoubleClick: (FileItem) -> Void
+        var onReachBottom: () -> Void
 
-        init(files: [FileItem], onDoubleClick: @escaping (FileItem) -> Void) {
+        private var scrollObserver: NSObjectProtocol?
+        private weak var observedScrollView: NSScrollView?
+
+        init(files: [FileItem], onDoubleClick: @escaping (FileItem) -> Void, onReachBottom: @escaping () -> Void) {
             self.files = files
             self.onDoubleClick = onDoubleClick
+            self.onReachBottom = onReachBottom
+        }
+
+        deinit {
+            if let observer = scrollObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+
+        /// 挂接滚动监听（幂等），滚到底部附近时触发加载更多
+        func attachScrollObserver(to scrollView: NSScrollView) {
+            guard observedScrollView !== scrollView else { return }
+            if let observer = scrollObserver {
+                NotificationCenter.default.removeObserver(observer)
+                scrollObserver = nil
+            }
+            observedScrollView = scrollView
+            scrollObserver = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification,
+                object: scrollView.contentView,
+                queue: .main
+            ) { [weak self] _ in
+                self?.checkReachBottom(scrollView)
+            }
+        }
+
+        /// 距文档底部不足阈值时触发加载更多
+        private func checkReachBottom(_ scrollView: NSScrollView) {
+            guard let documentView = scrollView.documentView else { return }
+            let clipView = scrollView.contentView
+            let visibleRect = clipView.bounds
+            let distanceToBottom = documentView.frame.height - (visibleRect.origin.y + visibleRect.height)
+            if distanceToBottom < 200 {
+                onReachBottom()
+            }
         }
 
         @objc func handleDoubleClick(_ sender: Any) {
