@@ -295,7 +295,8 @@ class DatabaseManager {
     
     /// 搜索文件（使用解析后的查询）
     func searchFiles(parsedQuery: SearchQueryParser.ParsedQuery, filter: SearchFilter?, whitelist: PathKeywordList? = nil, blacklist: PathKeywordList? = nil) -> [FileItem] {
-        return dbQueue.sync { [weak self] in
+        // 段一：SQL 查询（串行 DB 队列内），仅取数构建 FileItem；磁盘后置筛选放到队列外执行，避免长时间占用 dbQueue
+        let candidates: [FileItem] = dbQueue.sync { [weak self] in
             guard let self = self else { return [FileItem]() }
             var results: [FileItem] = []
             var searchSQL = "SELECT path, name, size, is_directory, created_date, modified_date, accessed_date, file_extension FROM file_index WHERE 1=1"
@@ -422,8 +423,8 @@ class DatabaseManager {
             searchSQL += " AND " + conditions.joined(separator: " AND ")
         }
         
-        searchSQL += " LIMIT 10000;"
-        
+        searchSQL += ";"
+
         var statement: OpaquePointer?
         
         if sqlite3_prepare_v2(self.db, searchSQL, -1, &statement, nil) == SQLITE_OK {
@@ -437,16 +438,35 @@ class DatabaseManager {
             }
             
             while sqlite3_step(statement) == SQLITE_ROW {
-                if let pathCString = sqlite3_column_text(statement, 0) {
-                    let path = String(cString: pathCString)
-                    let url = URL(fileURLWithPath: path)
-                    let item = FileItem(url: url)
-                    results.append(item)
-                }
+                guard let pathCString = sqlite3_column_text(statement, 0) else { continue }
+                let path = String(cString: pathCString)
+                // 直接从列读取元数据，避免每条记录再触发一次 resourceValues 磁盘读取
+                let name = Self.textColumn(statement, 1) ?? URL(fileURLWithPath: path).lastPathComponent
+                let size = sqlite3_column_int64(statement, 2)
+                let isDirectory = sqlite3_column_int(statement, 3) != 0
+                let createdDate = Self.dateColumn(statement, 4)
+                let modifiedDate = Self.dateColumn(statement, 5)
+                let accessedDate = Self.dateColumn(statement, 6)
+                let fileExtension = Self.textColumn(statement, 7)
+                results.append(FileItem(
+                    path: path,
+                    name: name,
+                    size: size,
+                    isDirectory: isDirectory,
+                    createdDate: createdDate,
+                    modifiedDate: modifiedDate,
+                    accessedDate: accessedDate,
+                    fileExtension: fileExtension
+                ))
             }
         }
         sqlite3_finalize(statement)
-        
+        return results
+        }
+
+        // 段二：内存后置筛选（dbQueue 之外，作用于完整结果集）
+        var results = candidates
+
         // 过滤掉 NOT 词条（排除包含 NOT 关键词的结果）
         if !parsedQuery.notTerms.isEmpty {
             results = results.filter { item in
@@ -514,11 +534,22 @@ class DatabaseManager {
         results = results.filter { item in
             FileManager.default.fileExists(atPath: item.path)
         }
-        
+
         return results
-        }
     }
-    
+
+    /// 读取文本列（可能为 NULL）
+    private static func textColumn(_ statement: OpaquePointer?, _ index: Int32) -> String? {
+        guard let cString = sqlite3_column_text(statement, index) else { return nil }
+        return String(cString: cString)
+    }
+
+    /// 读取日期列（REAL 秒值，可能为 NULL）
+    private static func dateColumn(_ statement: OpaquePointer?, _ index: Int32) -> Date? {
+        guard sqlite3_column_type(statement, index) != SQLITE_NULL else { return nil }
+        return Date(timeIntervalSince1970: sqlite3_column_double(statement, index))
+    }
+
     /// 添加索引目录
     func addIndexDirectory(path: String) -> Bool {
         return dbQueue.sync { [weak self] in

@@ -42,7 +42,21 @@ struct FileItem: Identifiable, Hashable {
         self.accessedDate = resourceValues?.contentAccessDate
         self.fileExtension = url.pathExtension.isEmpty ? nil : url.pathExtension.lowercased()
     }
-    
+
+    /// 从数据库列直接构造，避免逐条磁盘 `resourceValues` 读取（搜索热路径使用）
+    init(path: String, name: String, size: Int64, isDirectory: Bool,
+         createdDate: Date?, modifiedDate: Date?, accessedDate: Date?, fileExtension: String?) {
+        self.url = URL(fileURLWithPath: path)
+        self.name = name
+        self.path = path
+        self.size = size
+        self.isDirectory = isDirectory
+        self.createdDate = createdDate
+        self.modifiedDate = modifiedDate
+        self.accessedDate = accessedDate
+        self.fileExtension = fileExtension
+    }
+
     /// 格式化文件大小
     var formattedSize: String {
         if isDirectory {

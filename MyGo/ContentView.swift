@@ -10,7 +10,6 @@ import AppKit
 
 struct ContentView: View {
     @EnvironmentObject var indexManager: FileIndexManager
-    @EnvironmentObject var appState: AppState
     @StateObject private var searchService = SearchService()
     
     @State private var searchText = ""
@@ -82,13 +81,6 @@ struct ContentView: View {
         }
         .frame(minWidth: 800, minHeight: 600)
         .background(WindowSizeTracker())
-        .onChange(of: appState.showSettings) { _, _ in
-            // 当设置窗口关闭时保存窗口大小
-            saveWindowSize()
-        }
-        .sheet(isPresented: $appState.showSettings) {
-            SettingsView(indexManager: indexManager)
-        }
         .onAppear {
             let startTime = Date()
             Logger.shared.log("ContentView onAppear 开始", level: .debug)
