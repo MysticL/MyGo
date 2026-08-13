@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+## [1.3.1] - 2026-08-13
+### Changed
+- 修复列表行选中，双击改用 NSTableView doubleAction 处理
 ## [1.3.0] - 2026-08-13
 ### Changed
 - 修复搜索通配符/NOT 逻辑与文件身份稳定性，改用 FSEvents 实时监控，完善文件/文件夹右键菜单并修复选中高亮

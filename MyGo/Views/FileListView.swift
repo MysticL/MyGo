@@ -56,6 +56,9 @@ struct FileListView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
+                    .contextMenu {
+                        itemMenu(for: file)
+                    }
                 }
                 .width(min: 200, ideal: 400)
 
@@ -67,6 +70,9 @@ struct FileListView: View {
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
+                        .contextMenu {
+                            itemMenu(for: file)
+                        }
                 }
                 .width(min: 200, ideal: 600)
 
@@ -77,6 +83,9 @@ struct FileListView: View {
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                         .contentShape(Rectangle())
+                        .contextMenu {
+                            itemMenu(for: file)
+                        }
                 }
                 .width(min: 40, ideal: 50)
 
@@ -87,6 +96,9 @@ struct FileListView: View {
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                         .contentShape(Rectangle())
+                        .contextMenu {
+                            itemMenu(for: file)
+                        }
                 }
                 .width(min: 40, ideal: 50)
 
@@ -97,25 +109,18 @@ struct FileListView: View {
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
+                        .contextMenu {
+                            itemMenu(for: file)
+                        }
                 }
                 .width(min: 150, ideal: 150)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: true))
-            // 使用基于选中的上下文菜单 + 双击主操作：
-            // 避免在单元格上挂 onTapGesture 而吞掉单选高亮。
-            .contextMenu(
-                forSelectionType: String.self,
-                menu: { selection in
-                    selectionMenu(for: selection)
-                },
-                primaryAction: { selection in
-                    // 双击打开
-                    for file in files where selection.contains(file.id) {
-                        onFileAction(file, .open)
-                    }
-                }
-            )
-            .background(TableColumnAutosave())
+            // 双击打开走 NSTableView.doubleAction（AppKit 原生），不干扰单选；列宽走 autosave。
+            .background(TableColumnAutosave(
+                files: sortedFiles,
+                onDoubleClick: { file in onFileAction(file, .open) }
+            ))
 
             Divider()
 
@@ -133,79 +138,62 @@ struct FileListView: View {
         }
     }
 
+    /// 文件/文件夹的右键菜单
     @ViewBuilder
-    private func selectionMenu(for selection: Set<String>) -> some View {
-        let selected = files.filter { selection.contains($0.id) }
-        if selected.isEmpty {
-            EmptyView()
-        } else if selected.count == 1, let item = selected.first {
-            if item.isDirectory {
-                folderMenu(for: item)
-            } else {
-                fileMenu(for: item)
-            }
-        } else {
-            Button("复制路径 (\(selected.count) 项)") {
-                for file in selected { onFileAction(file, .copy) }
-            }
-            Divider()
-            Button("移动到废纸篓 (\(selected.count) 项)") {
-                for file in selected { onFileAction(file, .delete) }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func fileMenu(for file: FileItem) -> some View {
+    private func itemMenu(for file: FileItem) -> some View {
         Button("打开") { onFileAction(file, .open) }
         Button("在 Finder 中显示") { onFileAction(file, .reveal) }
         Button("在终端中打开") { onFileAction(file, .openInTerminal) }
         Divider()
         Button("复制路径") { onFileAction(file, .copy) }
-        Button("复制文件到...") { onFileAction(file, .copyTo) }
+        Button(file.isDirectory ? "复制文件夹到..." : "复制文件到...") { onFileAction(file, .copyTo) }
         Button("移动...") { onFileAction(file, .move) }
         Divider()
         Button("移动到废纸篓") { onFileAction(file, .delete) }
     }
-
-    @ViewBuilder
-    private func folderMenu(for folder: FileItem) -> some View {
-        Button("打开") { onFileAction(folder, .open) }
-        Button("在 Finder 中显示") { onFileAction(folder, .reveal) }
-        Button("在终端中打开") { onFileAction(folder, .openInTerminal) }
-        Divider()
-        Button("复制路径") { onFileAction(folder, .copy) }
-        Button("复制文件夹到...") { onFileAction(folder, .copyTo) }
-        Button("移动...") { onFileAction(folder, .move) }
-        Divider()
-        Button("移动到废纸篓") { onFileAction(folder, .delete) }
-    }
 }
 
-/// 借助 NSTableView 的 autosave 机制持久化列宽与列顺序。
-/// 替代原先基于轮询定时器 + 递归查找 + 手动读写的复杂实现。
+/// 借助 NSTableView 的能力：
+/// - `doubleAction` 实现双击打开（AppKit 原生，不影响单选）
+/// - `autosaveName`/`autosaveTableColumns` 持久化列宽与列顺序
 private struct TableColumnAutosave: NSViewRepresentable {
+    var files: [FileItem]
+    var onDoubleClick: (FileItem) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(files: files, onDoubleClick: onDoubleClick)
+    }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         view.wantsLayer = false
         // 等待视图进入窗口层级后再定位 NSTableView
         DispatchQueue.main.async {
-            Self.configure(view)
+            Self.configure(view, context: context)
         }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        // SwiftUI 可能在更新时重建 NSTableView，重新应用以确保持久化生效
+        context.coordinator.files = files
+        context.coordinator.onDoubleClick = onDoubleClick
         DispatchQueue.main.async {
-            Self.configure(nsView)
+            Self.configure(nsView, context: context)
         }
     }
 
-    private static func configure(_ view: NSView) {
+    private static func configure(_ view: NSView, context: Context) {
         guard let window = view.window, let contentView = window.contentView else { return }
         guard let tableView = findTableView(in: contentView) else { return }
 
+        // 双击打开（AppKit 原生，不会吞掉单选）
+        tableView.target = context.coordinator
+        tableView.doubleAction = #selector(Coordinator.handleDoubleClick(_:))
+
+        // 列宽/列顺序持久化（幂等，避免每次更新重复触发 autosave 恢复）
+        if tableView.autosaveName == "MyGoFileListTable" && tableView.autosaveTableColumns {
+            return
+        }
         tableView.autosaveName = "MyGoFileListTable"
         tableView.autosaveTableColumns = true
         tableView.allowsColumnReordering = true
@@ -223,5 +211,22 @@ private struct TableColumnAutosave: NSViewRepresentable {
             }
         }
         return nil
+    }
+
+    final class Coordinator: NSObject {
+        var files: [FileItem]
+        var onDoubleClick: (FileItem) -> Void
+
+        init(files: [FileItem], onDoubleClick: @escaping (FileItem) -> Void) {
+            self.files = files
+            self.onDoubleClick = onDoubleClick
+        }
+
+        @objc func handleDoubleClick(_ sender: Any) {
+            guard let tableView = sender as? NSTableView else { return }
+            let row = tableView.clickedRow
+            guard row >= 0 && row < files.count else { return }
+            onDoubleClick(files[row])
+        }
     }
 }
