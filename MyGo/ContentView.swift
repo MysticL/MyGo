@@ -81,6 +81,8 @@ struct ContentView: View {
         }
         .frame(minWidth: 800, minHeight: 600)
         .background(WindowSizeTracker())
+        // 窗口标题栏保持默认「MyGo」，仅更新标签页标题
+        .background(WindowTabTitleBridge(tabTitle: searchText.isEmpty ? "MyGo" : searchText))
         .onAppear {
             let startTime = Date()
             Logger.shared.log("ContentView onAppear 开始", level: .debug)

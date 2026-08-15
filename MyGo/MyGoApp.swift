@@ -11,16 +11,17 @@ import AppKit
 
 @main
 struct MyGoApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var indexManager = FileIndexManager()
     @StateObject private var permissionChecker = PermissionChecker()
-    
+
     init() {
         let startTime = Date()
         Logger.shared.log("=== 应用启动开始 ===", level: .debug)
-        
-        // 设置全局快捷键回调
+
+        // 设置全局快捷键回调：前台新建窗口，后台仅置前
         HotKeyManager.shared.onHotKeyPressed = {
-            WindowActivationManager.shared.showMainWindow()
+            WindowActivationManager.shared.handleHotKeyPressed()
         }
         
         let elapsed = Date().timeIntervalSince(startTime)
@@ -39,7 +40,13 @@ struct MyGoApp: App {
             height: permissionChecker.hasPermission ? PreferencesManager.shared.getWindowSize().height : 700
         )
         .commands {
-            CommandGroup(replacing: .newItem) {}
+            // 新建窗口（系统标签偏好时合并为标签页）
+            CommandGroup(replacing: .newItem) {
+                Button("新建窗口") {
+                    WindowActivationManager.shared.openNewMainWindow()
+                }
+                .keyboardShortcut("n", modifiers: [.command])
+            }
 
             // 「设置…」由原生 Settings scene 自动提供，这里只保留「重新索引」
             CommandGroup(after: .appSettings) {

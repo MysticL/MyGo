@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+
+## [1.7.1] - 2026-08-15
+### Changed
+- 窗口标题栏保持 MyGo，标签页标题单独显示搜索词
+## [1.7.0] - 2026-08-15
+### Changed
+- 全局快捷键前台新建窗口、后台仅置前；Dock 菜单与 ⌘N 新建窗口；窗口标题随搜索词实时更新
 ## [1.6.1] - 2026-08-15
 ### Changed
 - 搜索结果支持拖拽移动/复制（文件列表重写为原生 NSTableView，真实文件路径拖拽）

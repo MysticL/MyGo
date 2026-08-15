@@ -571,7 +571,7 @@ struct HotKeySettingsView: View {
             } header: {
                 Text("全局快捷键")
             } footer: {
-                Text("按下快捷键可随时显示主窗口；点击后输入新组合，按 Delete 清除，按 Escape 取消。")
+                Text("应用在前台时按快捷键新建窗口（系统标签偏好时合并为标签页），在后台时显示主窗口；点击后输入新组合，按 Delete 清除，按 Escape 取消。")
                     .foregroundColor(.secondary)
             }
         }
