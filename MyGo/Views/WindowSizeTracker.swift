@@ -12,11 +12,13 @@ struct WindowSizeTracker: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         view.wantsLayer = false
-        
+
         DispatchQueue.main.async {
+            // 给主窗口打上标识，供 WindowActivationManager 区分主窗口与设置窗口等
+            view.window?.identifier = WindowActivationManager.mainWindowIdentifier
             trackWindowSize()
         }
-        
+
         return view
     }
     

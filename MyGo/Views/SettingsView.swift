@@ -27,12 +27,17 @@ struct SettingsView: View {
                     Label("路径关键词", systemImage: "list.bullet")
                 }
 
+            HotKeySettingsView()
+                .tabItem {
+                    Label("快捷键", systemImage: "keyboard")
+                }
+
             LogSettingsView()
                 .tabItem {
                     Label("日志", systemImage: "doc.text")
                 }
         }
-        .frame(width: 480, height: 380)
+        .frame(width: 480, height: 420)
     }
 }
 
@@ -519,6 +524,58 @@ struct EditPathKeywordListView: View {
                 keywords = list.keywords.isEmpty ? [""] : list.keywords
             }
         }
+    }
+}
+
+// MARK: - 快捷键设置视图
+struct HotKeySettingsView: View {
+    @State private var keyCode: UInt32
+    @State private var modifiers: UInt32
+    @State private var isRecording = false
+    @State private var showConflict = false
+
+    init() {
+        let combo = PreferencesManager.shared.getHotKey()
+        _keyCode = State(initialValue: combo.keyCode)
+        _modifiers = State(initialValue: combo.modifiers)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("显示主窗口") {
+                    HStack(spacing: 8) {
+                        HotKeyRecorderView(
+                            keyCode: $keyCode,
+                            modifiers: $modifiers,
+                            isRecording: $isRecording,
+                            onCommit: { newKeyCode, newModifiers in
+                                let ok = HotKeyManager.shared.updateHotKey(keyCode: newKeyCode, modifiers: newModifiers)
+                                if ok {
+                                    PreferencesManager.shared.saveHotKey(keyCode: newKeyCode, modifiers: newModifiers)
+                                    showConflict = false
+                                } else {
+                                    showConflict = true
+                                }
+                                return ok
+                            }
+                        )
+
+                        if showConflict {
+                            Text("快捷键已被其他应用占用")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    }
+                }
+            } header: {
+                Text("全局快捷键")
+            } footer: {
+                Text("按下快捷键可随时显示主窗口；点击后输入新组合，按 Delete 清除，按 Escape 取消。")
+                    .foregroundColor(.secondary)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 

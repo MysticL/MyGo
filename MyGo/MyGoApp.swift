@@ -20,16 +20,7 @@ struct MyGoApp: App {
         
         // 设置全局快捷键回调
         HotKeyManager.shared.onHotKeyPressed = {
-            DispatchQueue.main.async {
-                NSApp.activate(ignoringOtherApps: true)
-                // 获取当前活动窗口
-                if let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey }) {
-                    window.makeKeyAndOrderFront(nil)
-                } else {
-                    // 如果没有可见窗口，尝试重新打开主窗口（SwiftUI App 生命周期通常会自动处理）
-                    // 但对于 WindowGroup，通常只要激活应用就会显示
-                }
-            }
+            WindowActivationManager.shared.showMainWindow()
         }
         
         let elapsed = Date().timeIntervalSince(startTime)
@@ -37,7 +28,7 @@ struct MyGoApp: App {
     }
     
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             RootView()
                 .environmentObject(indexManager)
                 .environmentObject(permissionChecker)
@@ -105,7 +96,8 @@ class PermissionChecker: ObservableObject {
 /// 根视图 - 根据权限显示不同内容
 struct RootView: View {
     @EnvironmentObject var permissionChecker: PermissionChecker
-    
+    @Environment(\.openWindow) private var openWindow
+
     var body: some View {
         Group {
             if permissionChecker.hasPermission {
@@ -119,6 +111,8 @@ struct RootView: View {
         .onAppear {
             let appearStartTime = Date()
             Logger.shared.log("RootView onAppear 开始", level: .debug)
+            // 注入重新打开主窗口的动作，供全局快捷键在窗口被关闭后重开使用
+            WindowActivationManager.shared.openMainWindow = openWindow
             permissionChecker.checkPermission()
             let elapsed = Date().timeIntervalSince(appearStartTime)
             Logger.shared.log("RootView onAppear 完成，耗时: \(String(format: "%.3f", elapsed))秒", level: .debug)

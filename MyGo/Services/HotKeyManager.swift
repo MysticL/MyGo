@@ -50,16 +50,17 @@ class HotKeyManager {
     private var eventHandlerUPP: EventHandlerUPP?
     
     var onHotKeyPressed: (() -> Void)?
-    
-    // 默认快捷键：Cmd+Ctrl+F
-    // 'f' 的键码是 3
-    private let defaultKeyCode: UInt32 = 3
-    private let defaultModifiers: UInt32 = UInt32(cmdKey | controlKey)
-    
+
+    /// 当前生效的快捷键
+    private(set) var currentKeyCode: UInt32
+    private(set) var currentModifiers: UInt32
+
     private init() {
+        let combo = PreferencesManager.shared.getHotKey()
+        currentKeyCode = combo.keyCode
+        currentModifiers = combo.modifiers
         setupEventHandler()
-        // 注册默认快捷键
-        _ = registerHotKey(keyCode: defaultKeyCode, modifiers: defaultModifiers)
+        _ = registerHotKey(keyCode: currentKeyCode, modifiers: currentModifiers)
     }
     
     deinit {
@@ -84,7 +85,12 @@ class HotKeyManager {
     /// 注册快捷键
     func registerHotKey(keyCode: UInt32, modifiers: UInt32) -> Bool {
         unregisterHotKey()
-        
+
+        // (0, 0) 表示已清除快捷键，仅注销、不再注册
+        if keyCode == 0 && modifiers == 0 {
+            return true
+        }
+
         var hotKeyRef: EventHotKeyRef?
         let status = RegisterEventHotKey(
             keyCode,
@@ -94,15 +100,30 @@ class HotKeyManager {
             0,
             &hotKeyRef
         )
-        
+
         if status == noErr {
             self.hotKeyRef = hotKeyRef
             return true
         }
-        
+
         return false
     }
-    
+
+    /// 更新快捷键；注册失败（被其他应用占用）返回 false 并恢复原快捷键
+    func updateHotKey(keyCode: UInt32, modifiers: UInt32) -> Bool {
+        let oldKeyCode = currentKeyCode
+        let oldModifiers = currentModifiers
+
+        if registerHotKey(keyCode: keyCode, modifiers: modifiers) {
+            currentKeyCode = keyCode
+            currentModifiers = modifiers
+            return true
+        } else {
+            _ = registerHotKey(keyCode: oldKeyCode, modifiers: oldModifiers)
+            return false
+        }
+    }
+
     /// 取消注册快捷键
     func unregisterHotKey() {
         if let hotKeyRef = hotKeyRef {

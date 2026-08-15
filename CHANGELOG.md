@@ -5,16 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-
-
-
-
-
-
-
-
-
-
+## [1.6.1] - 2026-08-15
+### Changed
+- 搜索结果支持拖拽移动/复制（文件列表重写为原生 NSTableView，真实文件路径拖拽）
+## [1.6.0] - 2026-08-13
+### Changed
+- 原生全局快捷键显示主窗口（可自定义，默认⌘⌃F）
 ## [1.5.0] - 2026-08-13
 ### Changed
 - 设置界面改为原生设置窗口，路径白名单/黑名单支持拖动排序

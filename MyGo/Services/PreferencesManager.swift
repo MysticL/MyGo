@@ -21,6 +21,12 @@ class PreferencesManager {
     private let searchFilterKey = "com.mygo.searchFilter"
     private let logEnabledKey = "com.mygo.logEnabled"
     private let logLevelKey = "com.mygo.logLevel"
+    private let hotKeyKeyCodeKey = "com.mygo.hotKeyKeyCode"
+    private let hotKeyModifiersKey = "com.mygo.hotKeyModifiers"
+
+    /// 默认快捷键：⌘⌃F（键码 3；Carbon 修饰符 cmdKey|controlKey = 0x1100）
+    private let defaultHotKeyKeyCode: Int = 3
+    private let defaultHotKeyModifiers: Int = 0x1100
 
     private init() {}
     
@@ -132,7 +138,24 @@ class PreferencesManager {
         }
         return filter
     }
-    
+
+    // MARK: - 全局快捷键管理
+
+    /// 保存全局快捷键
+    func saveHotKey(keyCode: UInt32, modifiers: UInt32) {
+        UserDefaults.standard.set(Int(keyCode), forKey: hotKeyKeyCodeKey)
+        UserDefaults.standard.set(Int(modifiers), forKey: hotKeyModifiersKey)
+    }
+
+    /// 获取全局快捷键（默认 ⌘⌃F；显式清除后返回 (0, 0) 表示未设置）
+    func getHotKey() -> (keyCode: UInt32, modifiers: UInt32) {
+        guard let keyCode = UserDefaults.standard.object(forKey: hotKeyKeyCodeKey) as? Int,
+              let modifiers = UserDefaults.standard.object(forKey: hotKeyModifiersKey) as? Int else {
+            return (UInt32(defaultHotKeyKeyCode), UInt32(defaultHotKeyModifiers))
+        }
+        return (UInt32(keyCode), UInt32(modifiers))
+    }
+
     // MARK: - 日志设置管理
     
     /// 保存日志开关状态
